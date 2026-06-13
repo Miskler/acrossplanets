@@ -1,0 +1,74 @@
+[gd_scene format=3 uid="uid://cd5eulfo5s1wb"]
+
+[ext_resource type="Script" uid="uid://mg4x31t6owkb" path="res://scripts/galaxy.gd" id="1_galaxy"]
+
+[node name="Interface" type="CanvasLayer" unique_id=1769973308]
+
+[node name="GraphEdit" type="GraphEdit" parent="." unique_id=659020787]
+offset_right = 1152.0
+offset_bottom = 648.0
+grid_pattern = 1
+snapping_enabled = false
+right_disconnects = true
+connections = Array[Dictionary]([{
+"from_node": &"",
+"from_port": 0,
+"keep_alive": true,
+"to_node": &"",
+"to_port": 0
+}])
+minimap_enabled = false
+show_menu = false
+show_zoom_buttons = false
+show_grid_buttons = false
+show_minimap_button = false
+show_arrange_button = false
+script = ExtResource("1_galaxy")
+
+[node name="*BackgroudSector" type="GraphElement" parent="GraphEdit" unique_id=2030822933]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -576.0
+offset_top = -324.0
+offset_right = -560.0
+offset_bottom = -307.09436
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="placeholder" type="ColorRect" parent="GraphEdit/*BackgroudSector" unique_id=1583761057]
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.7708738, 3.4172833e-06, 0.46959305, 1)
+
+[node name="*Sector" type="GraphElement" parent="GraphEdit" unique_id=301033709]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -576.0
+offset_top = -324.0
+offset_right = -544.0
+offset_bottom = -290.1887
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="placeholder" type="ColorRect" parent="GraphEdit/*Sector" unique_id=647843791]
+layout_mode = 2
+
+[node name="*Connector" type="GraphElement" parent="GraphEdit" unique_id=981884161]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 8.0
+mouse_filter = 2
+
+[node name="ColorRect" type="ColorRect" parent="GraphEdit/*Connector" unique_id=1196493931]
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.22105125, 0.3045972, 0.39088395, 1)

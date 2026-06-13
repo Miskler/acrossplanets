@@ -1,0 +1,30 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="AcrossPlanets"
+run/main_scene="uid://cd5eulfo5s1wb"
+config/features=PackedStringArray("4.6", "Forward Plus")
+config/icon="res://icon.svg"
+config/run/main_scene="res://scenes/interface.tscn"
+
+[autoload]
+
+ClusterGenerator="*uid://c1062w7po3k25"
+GalaxyConnector="*uid://dpbsj3asgujk5"
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+rendering_device/driver.windows="d3d12"

@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://c1062w7po3k25"]
+
+[ext_resource type="Script" uid="uid://dury1ysahmf5o" path="res://scripts/cluster_generator.gd" id="1_ntlnn"]
+
+[node name="ClusterGenerator" type="Node" unique_id=1931518489]
+script = ExtResource("1_ntlnn")
