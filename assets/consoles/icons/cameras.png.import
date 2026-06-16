@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b81djs0hbyxtl"
-path="res://.godot/imported/starship.png-69c705e9794cc16a6beef95b12257751.ctex"
+uid="uid://cl6yj2w781w6n"
+path="res://.godot/imported/cameras.png-6ca9b61ec5e8d260eb803e723c0c485f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/starship.png"
-dest_files=["res://.godot/imported/starship.png-69c705e9794cc16a6beef95b12257751.ctex"]
+source_file="res://assets/consoles/icons/cameras.png"
+dest_files=["res://.godot/imported/cameras.png-6ca9b61ec5e8d260eb803e723c0c485f.ctex"]
 
 [params]
 
@@ -37,4 +37,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=0
+detect_3d/compress_to=1

@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://mg4x31t6owkb" path="res://scripts/galaxy.gd" id="1_galaxy"]
 [ext_resource type="Script" uid="uid://crgnsljwtk1jt" path="res://scripts/dynamic_back.gd" id="2_lw6my"]
+[ext_resource type="Shader" uid="uid://bt0jynyveawi4" path="res://scripts/space.gdshader" id="2_ttflf"]
 [ext_resource type="PackedScene" uid="uid://clqvlybt45o7r" path="res://planets/Star/Star.tscn" id="3_t72xj"]
 [ext_resource type="PackedScene" uid="uid://xjrxhq67hgl7" path="res://planets/LavaWorld/LavaWorld.tscn" id="4_s0di0"]
 [ext_resource type="PackedScene" uid="uid://nn5fi105o1xv" path="res://planets/BlackHole/BlackHole.tscn" id="4_uidac"]
@@ -13,11 +14,22 @@
 [ext_resource type="PackedScene" uid="uid://cqwgwog1pm6s3" path="res://planets/DryTerran/DryTerran.tscn" id="11_prp0k"]
 [ext_resource type="PackedScene" uid="uid://bj7tr13ilvj3h" path="res://planets/Asteroids/Asteroid.tscn" id="12_dtbhd"]
 [ext_resource type="Script" uid="uid://udib0fxhebjd" path="res://scripts/effects.gd" id="13_mde6w"]
-[ext_resource type="TileSet" uid="uid://doqmj0wfyr86d" path="res://assets/starship.tres" id="14_ctaxy"]
-[ext_resource type="Texture2D" uid="uid://5ycx550gyxoo" path="res://icon.svg" id="17_ttflf"]
+[ext_resource type="TileSet" uid="uid://doqmj0wfyr86d" path="res://assets/foundation.tres" id="14_ctaxy"]
+[ext_resource type="Script" uid="uid://du828knuodq85" path="res://scripts/starship.gd" id="14_ttflf"]
+[ext_resource type="TileSet" uid="uid://b1yo42dqcnhur" path="res://assets/stations.tres" id="16_ttflf"]
 
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_ttflf"]
-size = Vector2(38, 38)
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_prp0k"]
+shader = ExtResource("2_ttflf")
+shader_parameter/anim_speed = 0.0010002375475002268
+shader_parameter/star_brightness = 0.0170000008075
+shader_parameter/dust = 0.0010000000475
+shader_parameter/dist_fade = 0.410000019475
+shader_parameter/pixelation = 116.3990031539525
+shader_parameter/quantization_levels = 256
+shader_parameter/dust_color = Color(0, 4.422663, 4.5458884, 1)
+shader_parameter/saturation = 1.0
+shader_parameter/layers = 9.0
+shader_parameter/iterations = 6
 
 [node name="Interface" type="CanvasLayer" unique_id=1769973308]
 
@@ -98,6 +110,7 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="Background" type="ColorRect" parent="InGame" unique_id=1783284164]
+material = SubResource("ShaderMaterial_prp0k")
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -107,6 +120,7 @@ grow_vertical = 2
 color = Color(0, 0, 0, 1)
 
 [node name="DynamicBack" type="Control" parent="InGame" unique_id=1454057140]
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -116,6 +130,7 @@ grow_vertical = 2
 script = ExtResource("2_lw6my")
 
 [node name="Central" type="Control" parent="InGame" unique_id=2058248861]
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -151,6 +166,7 @@ offset_bottom = 372.0
 scale = Vector2(7.12, 7.12)
 
 [node name="Side" type="Control" parent="InGame" unique_id=1974182639]
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -210,26 +226,21 @@ grow_vertical = 2
 script = ExtResource("13_mde6w")
 
 [node name="TileWorld" type="Node2D" parent="InGame" unique_id=360676072]
+visible = false
 position = Vector2(308, 361)
 rotation = 1.5707964
+script = ExtResource("14_ttflf")
 
-[node name="TileMapLayer" type="TileMapLayer" parent="InGame/TileWorld" unique_id=212273132]
-scale = Vector2(20, 20)
-tile_map_data = PackedByteArray("AAD8//3/AAAAAAAAAAD8//7/AAAAAAEAAAD8////AAAAAAIAAAD8/wAAAAAAAAEAAAD8/wEAAAAAAAMAAAD8/wIAAAADAAUAAAD8/wMAAAADAAUAAAD9//3/AAACAAAAAAD9//7/AAAEAAAAAAD9////AAAEAAAAAAD9/wAAAAAEAAAAAAD9/wEAAAABAAMAAAD9/wIAAAAEAAAAAAD9/wMAAAAEAAAAAAD9/wQAAAAAAAMAAAD+//z/AAAAAAEAAAD+//3/AAAAAAMAAAD+//7/AAAAAAIAAAD+////AAAAAAMAAAD+/wAAAAAAAAUAAAD+/wEAAAAAAAUAAAD+/wIAAAACAAAAAAD+/wMAAAAEAAAAAAD+/wQAAAABAAMAAAD///z/AAAEAAAAAAD///3/AAABAAMAAAD///7/AAAEAAAAAAD/////AAACAAMAAAD//wIAAAADAAAAAAD//wMAAAADAAIAAAD//wQAAAADAAMAAAAAAPz/AAAEAAAAAAAAAP3/AAACAAMAAAAAAP7/AAAEAAAAAAAAAP//AAACAAMAAAAAAAIAAAACAAAAAAAAAAMAAAAEAAAAAAAAAAQAAAACAAMAAAABAPz/AAADAAEAAAABAP3/AAADAAMAAAABAP7/AAADAAIAAAABAP//AAADAAMAAAABAAAAAAADAAUAAAABAAEAAAADAAUAAAABAAIAAAACAAAAAAABAAMAAAAEAAAAAAABAAQAAAABAAMAAAACAP3/AAACAAAAAAACAP7/AAAEAAAAAAACAP//AAAEAAAAAAACAAAAAAAEAAAAAAACAAEAAAABAAMAAAACAAIAAAAEAAAAAAACAAMAAAAEAAAAAAACAAQAAAADAAMAAAADAP3/AAADAAAAAAADAP7/AAADAAEAAAADAP//AAADAAEAAAADAAAAAAADAAEAAAADAAEAAAADAAMAAAADAAIAAAAAAAUAAAADAAMAAAAAAAUAAAD///v/AAACAAAAAAAAAPv/AAACAAAAAAD+//v/AAAAAAAAAAABAPv/AAADAAAAAAD8/wQAAAABAAYAAAADAAQAAAACAAYAAAD9//z/AAABAAUAAAACAPz/AAACAAUAAAAAAPr/AAACAAUAAAD///r/AAABAAUAAAA=")
+[node name="Foundation" type="TileMapLayer" parent="InGame/TileWorld" unique_id=212273132]
+scale = Vector2(3, 3)
+tile_map_data = PackedByteArray("AAD8//3/AAAAAAAAAAD8////AAAAAAIAAAD8/wAAAAAAAAEAAAD8/wEAAAAAAAMAAAD8/wIAAAACAAAAAGD8/wMAAAAAAAcAADD9//3/AAACAAAAAAD9//7/AAAFAAAAAAD9////AAAEAAAAAAD9/wAAAAAEAAAAAAD9/wEAAAABAAMAAAD9/wIAAAAEAAAAAAD9/wMAAAAEAAAAAAD9/wQAAAAAAAMAAAD+//z/AAAAAAEAAAD+//3/AAAAAAMAAAD+//7/AAAAAAIAAAD+////AAAAAAMAAAD+/wAAAAAAAAUAAAD+/wEAAAAAAAUAAAD+/wIAAAACAAAAAAD+/wMAAAAFAAAAAAD+/wQAAAABAAMAAAD///z/AAAFAAAAAAD///3/AAAAAAEAAGD///7/AAAEAAAAAAD/////AAACAAMAAAD//wIAAAADAAAAAAD//wMAAAADAAIAAAD//wQAAAADAAMAAAAAAPz/AAAEAAAAAAAAAP3/AAABAAMAAAAAAP7/AAAEAAAAAAAAAP//AAACAAMAAAAAAAIAAAACAAAAAAAAAAMAAAAFAAAAAAAAAAQAAAACAAMAAAABAPz/AAADAAEAAAABAP3/AAADAAMAAAABAP7/AAABAAMAAGABAP//AAADAAMAAAABAAAAAAADAAUAAAABAAEAAAADAAUAAAABAAIAAAACAAAAAAABAAMAAAAEAAAAAAABAAQAAAABAAMAAAACAP3/AAACAAAAAAACAP7/AAAEAAAAAAACAP//AAAEAAAAAAACAAAAAAAFAAAAAAACAAEAAAABAAMAAAACAAIAAAAEAAAAAAACAAMAAAAEAAAAAAACAAQAAAADAAMAAAADAP3/AAADAAAAAAADAP7/AAACAAAAAFADAP//AAADAAEAAAADAAAAAAADAAEAAAADAAEAAAADAAMAAAADAAIAAAACAAAAAFADAAMAAAADAAQAAGD///v/AAACAAAAAAAAAPv/AAACAAAAAAD+//v/AAAAAAAAAAABAPv/AAADAAAAAAD8/wQAAAABAAYAAAADAAQAAAACAAYAAAD9//z/AAABAAUAAAACAPz/AAACAAUAAAAAAPr/AAACAAUAAAD///r/AAABAAUAAAD8//7/AAACAAAAAGA=")
 tile_set = ExtResource("14_ctaxy")
 
+[node name="Stations" type="TileMapLayer" parent="InGame/TileWorld" unique_id=1291306650]
+scale = Vector2(3, 3)
+tile_map_data = PackedByteArray("AAD8//7/AAAAAAAAAAAAAAQAAQAAAAAAAFD8/wAAAAAAAAEAAAD9//3/AAAAAAEAAFAAAAIAAQAAAAEAAFABAAIAAQAAAAEAAFD+/wIABQAAAAAAAGD8/wIABQAAAAEAAAADAAAAAgAAAAAAADADAP//AgAAAAEAAAADAP7/AgAAAAEAAAACAP3/AgAAAAEAAGAAAP//AwAAAAAAAFD/////AwAAAAEAAGD///v/BgAAAAAAAGAAAPv/BgAAAAEAAGABAPz/BgAAAAEAAAD+//z/BgAAAAEAAAD///3/BgAAAAEAAFA=")
+tile_set = ExtResource("16_ttflf")
+
 [node name="Pawns" type="Node2D" parent="InGame/TileWorld" unique_id=1015546334]
-
-[node name="Pawn" type="Area2D" parent="InGame/TileWorld/Pawns" unique_id=1904801530]
-position = Vector2(-20, -144)
-collision_layer = 128
-collision_mask = 0
-
-[node name="Icon" type="Sprite2D" parent="InGame/TileWorld/Pawns/Pawn" unique_id=1799953285]
-scale = Vector2(0.2929688, 0.2929688)
-texture = ExtResource("17_ttflf")
-
-[node name="CollisionShape2D" type="CollisionShape2D" parent="InGame/TileWorld/Pawns/Pawn" unique_id=1750328196]
-shape = SubResource("RectangleShape2D_ttflf")
 
 [node name="GameInput" type="Node2D" parent="InGame/TileWorld" unique_id=653252715]

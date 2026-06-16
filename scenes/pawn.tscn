@@ -1,0 +1,18 @@
+[gd_scene format=3 uid="uid://d2ltkmdw8vb0a"]
+
+[ext_resource type="Texture2D" uid="uid://5ycx550gyxoo" path="res://icon.svg" id="1_bab8k"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_ttflf"]
+size = Vector2(38, 38)
+
+[node name="Pawn" type="Area2D" unique_id=1217865856]
+visible = false
+collision_layer = 128
+collision_mask = 0
+
+[node name="Icon" type="Sprite2D" parent="." unique_id=582413818]
+scale = Vector2(0.2929688, 0.2929688)
+texture = ExtResource("1_bab8k")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1987510491]
+shape = SubResource("RectangleShape2D_ttflf")
