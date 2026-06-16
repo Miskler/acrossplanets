@@ -14,7 +14,9 @@
 [ext_resource type="PackedScene" uid="uid://bj7tr13ilvj3h" path="res://planets/Asteroids/Asteroid.tscn" id="12_dtbhd"]
 [ext_resource type="Script" uid="uid://udib0fxhebjd" path="res://scripts/effects.gd" id="13_mde6w"]
 [ext_resource type="TileSet" uid="uid://doqmj0wfyr86d" path="res://assets/starship.tres" id="14_ctaxy"]
+[ext_resource type="Script" uid="uid://crpv30ra4h378" path="res://scripts/pawn.gd" id="16_ttflf"]
 [ext_resource type="Texture2D" uid="uid://5ycx550gyxoo" path="res://icon.svg" id="17_ttflf"]
+[ext_resource type="Script" uid="uid://dlrjbocjkw6fn" path="res://scripts/game_input.gd" id="18_prp0k"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_ttflf"]
 size = Vector2(38, 38)
@@ -220,10 +222,11 @@ tile_set = ExtResource("14_ctaxy")
 
 [node name="Pawns" type="Node2D" parent="InGame/TileWorld" unique_id=1015546334]
 
-[node name="Pawn" type="Area2D" parent="InGame/TileWorld/Pawns" unique_id=1904801530]
+[node name="Pawn" type="Area2D" parent="InGame/TileWorld/Pawns" unique_id=1904801530 groups=["pawn"]]
 position = Vector2(-20, -144)
 collision_layer = 128
 collision_mask = 0
+script = ExtResource("16_ttflf")
 
 [node name="Icon" type="Sprite2D" parent="InGame/TileWorld/Pawns/Pawn" unique_id=1799953285]
 scale = Vector2(0.2929688, 0.2929688)
@@ -232,4 +235,6 @@ texture = ExtResource("17_ttflf")
 [node name="CollisionShape2D" type="CollisionShape2D" parent="InGame/TileWorld/Pawns/Pawn" unique_id=1750328196]
 shape = SubResource("RectangleShape2D_ttflf")
 
-[node name="GameInput" type="Node2D" parent="InGame/TileWorld" unique_id=653252715]
+[node name="GameInput" type="Node2D" parent="InGame/TileWorld" unique_id=653252715 node_paths=PackedStringArray("tile_world")]
+script = ExtResource("18_prp0k")
+tile_world = NodePath("..")

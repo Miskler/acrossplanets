@@ -1,7 +1,7 @@
 extends Node
+class_name ClusterGenerator
 
-
-func generate_spiral_galaxy(
+static func generate_spiral_galaxy(
 	arm_count: int,
 	sectors_per_arm: int,
 	seed_value: int = -1,
@@ -163,7 +163,7 @@ func generate_spiral_galaxy(
 
 
 # Вспомогательная функция: нормальное распределение
-func _rand_normal(rng: RandomNumberGenerator) -> float:
+static func _rand_normal(rng: RandomNumberGenerator) -> float:
 	var sum: float = 0.0
 	for i in range(12):
 		sum += rng.randf()
@@ -171,7 +171,7 @@ func _rand_normal(rng: RandomNumberGenerator) -> float:
 
 
 # Расталкивание секторов, чтобы соблюдалась минимальная дистанция
-func _relax_sectors(sectors: Array[Dictionary], min_dist: float, iterations: int = 6) -> void:
+static func _relax_sectors(sectors: Array[Dictionary], min_dist: float, iterations: int = 6) -> void:
 	if sectors.size() < 2:
 		return
 	

@@ -1,6 +1,7 @@
 extends Node
+class_name GalaxyConnector
 
-func generate_connections(
+static func generate_connections(
 	sectors: Array[Dictionary],
 	arm_count: int,
 	connection_distance: float = 45.0,
@@ -219,7 +220,7 @@ func generate_connections(
 	
 	return connections
 
-func find_sectors_not_connected_to_center(sectors: Array[Dictionary], connections: Array[Dictionary]) -> Array[String]:
+static func find_sectors_not_connected_to_center(sectors: Array[Dictionary], connections: Array[Dictionary]) -> Array[String]:
 	# Результат: список id секторов, которые недостижимы из центра "C0"
 	var candidates: Array[String] = []
 	

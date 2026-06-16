@@ -1,6 +1,0 @@
-[gd_scene format=3 uid="uid://dpbsj3asgujk5"]
-
-[ext_resource type="Script" uid="uid://k6s7ervloieu" path="res://scripts/galaxy_connector.gd" id="1_o2vjb"]
-
-[node name="GalaxyConnector" type="Node" unique_id=402753609]
-script = ExtResource("1_o2vjb")
