@@ -21,26 +21,39 @@ const CAUSE_FROM_IS_NOT_FLOOR: String = "Start cell is not floor"
 const CAUSE_TO_IS_NOT_FLOOR: String = "Target cell is not floor"
 const CAUSE_NO_PATH: String = "There is no path"
 
+static func postprocess_smooth_steps(
+	steps: Array[Dictionary],
+	corner_radius_px: float = 32.0,
+	segments_per_corner: int = 10
+) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
 
-static func postprocess_smooth_points(
-	points: PackedVector2Array,
-	corner_radius_px: float = 16.0,
-	segments_per_corner: int = 5
-) -> PackedVector2Array:
-	var result: PackedVector2Array = PackedVector2Array()
-
-	if points.size() <= 2:
-		return points
+	if steps.size() <= 2:
+		for step: Dictionary in steps:
+			result.append(step.duplicate(true))
+		return result
 
 	segments_per_corner = maxi(segments_per_corner, 1)
 	corner_radius_px = maxf(corner_radius_px, 0.0)
 
-	result.append(points[0])
+	result.append(steps[0].duplicate(true))
 
-	for i: int in range(1, points.size() - 1):
-		var prev: Vector2 = points[i - 1]
-		var current: Vector2 = points[i]
-		var next: Vector2 = points[i + 1]
+	for i: int in range(1, steps.size() - 1):
+		var prev_step: Dictionary = steps[i - 1]
+		var current_step: Dictionary = steps[i]
+		var next_step: Dictionary = steps[i + 1]
+
+		if not _step_has_point(prev_step) or not _step_has_point(current_step) or not _step_has_point(next_step):
+			_append_unique_step(result, current_step)
+			continue
+
+		if not _can_smooth_step(current_step):
+			_append_unique_step(result, current_step)
+			continue
+
+		var prev: Vector2 = prev_step["point"]
+		var current: Vector2 = current_step["point"]
+		var next: Vector2 = next_step["point"]
 
 		var prev_vec: Vector2 = current - prev
 		var next_vec: Vector2 = next - current
@@ -49,17 +62,16 @@ static func postprocess_smooth_points(
 		var next_len: float = next_vec.length()
 
 		if prev_len < 0.001 or next_len < 0.001:
-			_append_unique_point(result, current)
+			_append_unique_step(result, current_step)
 			continue
 
 		var prev_dir: Vector2 = prev_vec / prev_len
 		var next_dir: Vector2 = next_vec / next_len
 
-		# Если почти прямая линия — не скругляем.
 		var dot_value: float = clampf(prev_dir.dot(next_dir), -1.0, 1.0)
 
 		if dot_value > 0.999:
-			_append_unique_point(result, current)
+			_append_unique_step(result, current_step)
 			continue
 
 		var trim: float = minf(
@@ -70,10 +82,14 @@ static func postprocess_smooth_points(
 		var corner_start: Vector2 = current - prev_dir * trim
 		var corner_end: Vector2 = current + next_dir * trim
 
-		_append_unique_point(result, corner_start)
+		_append_unique_step(
+			result,
+			_make_smooth_move_step(current_step, corner_start)
+		)
 
 		for segment_index: int in range(1, segments_per_corner + 1):
 			var t: float = float(segment_index) / float(segments_per_corner)
+
 			var p: Vector2 = _quadratic_bezier(
 				corner_start,
 				current,
@@ -81,12 +97,85 @@ static func postprocess_smooth_points(
 				t
 			)
 
-			_append_unique_point(result, p)
+			_append_unique_step(
+				result,
+				_make_smooth_move_step(current_step, p)
+			)
 
-	_append_unique_point(result, points[points.size() - 1])
+	_append_unique_step(result, steps[steps.size() - 1])
 
 	return result
 
+static func _step_has_point(step: Dictionary) -> bool:
+	if not step.has("point"):
+		return false
+
+	return typeof(step["point"]) == TYPE_VECTOR2
+
+
+static func _can_smooth_step(step: Dictionary) -> bool:
+	var action: String = str(step.get("action", ""))
+	var kind: String = str(step.get("kind", ""))
+
+	# Важные логические шаги не трогаем:
+	# start, open_door, close_door, door_enter, door_exit.
+	if action != "move":
+		return false
+
+	if kind != "floor":
+		return false
+
+	return true
+
+
+static func _make_smooth_move_step(
+	source_step: Dictionary,
+	point: Vector2
+) -> Dictionary:
+	var step: Dictionary = source_step.duplicate(true)
+
+	step["point"] = point
+	step["action"] = "move"
+	step["kind"] = "floor"
+	step["smooth"] = true
+
+	return step
+
+
+static func _append_unique_step(
+	steps: Array[Dictionary],
+	step: Dictionary
+) -> void:
+	if not _step_has_point(step):
+		steps.append(step.duplicate(true))
+		return
+
+	var point: Vector2 = step["point"]
+
+	if steps.size() > 0:
+		var last_step: Dictionary = steps[steps.size() - 1]
+
+		if _step_has_point(last_step):
+			var last_point: Vector2 = last_step["point"]
+
+			if last_point.distance_to(point) < 0.001:
+				return
+
+	steps.append(step.duplicate(true))
+
+
+static func _steps_to_points(
+	steps: Array[Dictionary]
+) -> PackedVector2Array:
+	var points: PackedVector2Array = PackedVector2Array()
+
+	for step: Dictionary in steps:
+		if not _step_has_point(step):
+			continue
+
+		points.append(step["point"])
+
+	return points
 
 static func _quadratic_bezier(
 	a: Vector2,
@@ -199,17 +288,20 @@ static func calculate(
 		return result
 
 	result["cell_path"] = raw_path
-
+	
 	var controls: Dictionary = _build_control_points(
 		tile_layer,
 		raw_path,
 		path_cells_by_kind,
 		door_margin_px
 	)
-
-	result["points"] = controls["points"]
-	result["steps"] = controls["steps"]
-
+	
+	var raw_steps: Array[Dictionary] = controls["steps"]
+	var processed_steps: Array[Dictionary] = postprocess_smooth_steps(raw_steps)
+	
+	result["steps"] = processed_steps
+	result["points"] = _steps_to_points(processed_steps)
+	
 	return result
 
 

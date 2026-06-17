@@ -61,7 +61,6 @@ func _ready() -> void:
 		floor_validation["rooms"][-1]["floor_main"]
 	)
 	
-	path_data["points"] = ShipPathfinder.postprocess_smooth_points(path_data["points"], 16)
 	draw_debug_path(path_data)
 
 
