@@ -15,6 +15,8 @@ signal delete_pawn_event(node, uuid)
 @onready var pawns_layer = $Pawns
 const SAMPLES_PER_TILE: int = 1
 
+var time2change_door_state = 0.2
+
 var rooms: Array[Dictionary] = []
 var pawns: Dictionary = {}
 
@@ -69,11 +71,23 @@ func _on_pawn_action_required(
 	pawn_id: String
 ) -> void:
 	var action: String = step["action"]
+	
+	var wait: bool = {"open_door": "open", "close_door": "closed"}[action] == DoorManager.get_door_state(foundation_layer, step["door_cells"])
+	await get_tree().create_timer(time2change_door_state).timeout
+	
 	match action:
 		"open_door":
-			open_door_cells(step["door_cells"])
+			wait = DoorManager.set_door_state(
+				foundation_layer,
+				step["door_cells"],
+				"open"
+			)
 		"close_door":
-			close_door_cells(step["door_cells"])
+			wait = DoorManager.set_door_state(
+				foundation_layer,
+				step["door_cells"],
+				"closed"
+			)
 	
 	pawns[pawn_id]["task"]["next_step_index"] = next_step_index
 	
@@ -81,14 +95,6 @@ func _on_pawn_action_required(
 		pawns[pawn_id]["task"]["steps"],
 		next_step_index
 	)
-
-func open_door_cells(door_cells: Array) -> void:
-	for cell: Vector2i in door_cells:
-		print("open door: ", cell)
-
-func close_door_cells(door_cells: Array) -> void:
-	for cell: Vector2i in door_cells:
-		print("close door: ", cell)
 
 func _on_pawn_movement_finished(pawn_id: String) -> void:
 	var target_cell: Vector2i = pawns[pawn_id]["task"]["target_cell"]
