@@ -71,30 +71,75 @@ func _on_pawn_action_required(
 	pawn_id: String
 ) -> void:
 	var action: String = step["action"]
-	
-	var wait: bool = {"open_door": "open", "close_door": "closed"}[action] == DoorManager.get_door_state(foundation_layer, step["door_cells"])
-	await get_tree().create_timer(time2change_door_state).timeout
-	
+	var door_cells: Array = step["door_cells"]
+	var door_key: String = _door_cells_key(door_cells)
+
+	var task: Dictionary = pawns[pawn_id]["task"]
+
+	if not task.has("opened_doors"):
+		task["opened_doors"] = {}
+
 	match action:
 		"open_door":
-			wait = DoorManager.set_door_state(
+			var current_state: String = DoorManager.get_door_state(
 				foundation_layer,
-				step["door_cells"],
-				"open"
+				door_cells
 			)
+
+			var need_open: bool = current_state != "open"
+
+			if need_open:
+				task["opened_doors"][door_key] = true
+
+				DoorManager.set_door_state(
+					foundation_layer,
+					door_cells,
+					"open"
+				)
+
+				await get_tree().create_timer(time2change_door_state).timeout
+
 		"close_door":
-			wait = DoorManager.set_door_state(
+			if not task["opened_doors"].has(door_key):
+				pawns[pawn_id]["task"]["next_step_index"] = next_step_index
+				pawns[pawn_id]["node"].move_by_steps_until_action(
+					pawns[pawn_id]["task"]["steps"],
+					next_step_index
+				)
+				return
+
+			var current_state: String = DoorManager.get_door_state(
 				foundation_layer,
-				step["door_cells"],
-				"closed"
+				door_cells
 			)
-	
+
+			if current_state != "closed":
+				DoorManager.set_door_state(
+					foundation_layer,
+					door_cells,
+					"closed"
+				)
+
+				await get_tree().create_timer(time2change_door_state).timeout
+
+			task["opened_doors"].erase(door_key)
+
 	pawns[pawn_id]["task"]["next_step_index"] = next_step_index
-	
+
 	pawns[pawn_id]["node"].move_by_steps_until_action(
 		pawns[pawn_id]["task"]["steps"],
 		next_step_index
 	)
+
+func _door_cells_key(door_cells: Array) -> String:
+	var result: PackedStringArray = []
+
+	for cell: Vector2i in door_cells:
+		result.append("%d:%d" % [cell.x, cell.y])
+
+	result.sort()
+
+	return "|".join(result)
 
 func _on_pawn_movement_finished(pawn_id: String) -> void:
 	var target_cell: Vector2i = pawns[pawn_id]["task"]["target_cell"]
