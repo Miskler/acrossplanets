@@ -6,6 +6,7 @@ signal movement_action_required(step: Dictionary, next_step_index: int)
 @onready var sprite_layer: AnimatedSprite2D = $Sprite
 
 var move_speed_px: float = 80.0
+var oxygen_consumption: float = 2.0
 var point_reach_distance_px: float = 1.0
 
 var race: String = "human"
@@ -28,6 +29,7 @@ func set_race(new_race: String):
 	match new_race:
 		"human":
 			move_speed_px = 80
+			oxygen_consumption = 20
 		_:
 			push_error("Unknown race: "+str(new_race))
 

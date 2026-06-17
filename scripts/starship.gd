@@ -20,12 +20,47 @@ var time2change_door_state = 0.2
 var rooms: Array[Dictionary] = []
 var pawns: Dictionary = {}
 
+@export var oxygen_enabled: bool = true
+@export var oxygen_default_percent: float = 100.0
+
+# Главная переменная самовосстановления кислорода.
+# Можно менять динамически прямо во время игры.
+@export var oxygen_air_production_per_second: float = 2.0
+
+# Скорость выравнивания кислорода через открытую дверь.
+@export var oxygen_door_flow_per_second: float = 0.65
+
+# Потеря кислорода через открытую дверь в космос / никуда.
+@export var oxygen_exterior_loss_per_second: float = 38.0
+
+# Потеря кислорода от пробоин.
+# Реальная потеря = oxygen_hole_loss_per_impact * impact.
+@export var oxygen_hole_loss_per_impact: float = 10.0
+
+@export var oxygen_visual_max_alpha: float = 0.65
+@export var oxygen_hole_recheck_interval: float = 0.25
+
+var oxygen_pawn_consumption: Dictionary = {}
+var oxygen_overlay_layer: Node2D
+var oxygen_by_room: Dictionary = {}
+var oxygen_room_areas: Dictionary = {}
+var oxygen_door_links: Array[Dictionary] = []
+var oxygen_hole_impacts: Dictionary = {}
+var oxygen_room_polygons: Dictionary = {}
+var oxygen_hole_recheck_timer: float = 0.0
+
+
 func _ready() -> void:
 	restart()
+
+func _process(delta: float) -> void:
+	if oxygen_enabled:
+		process_oxygen(delta)
 
 func restart() -> void:
 	technical_layer.hide()
 	rooms = recalc_rooms()
+	setup_oxygen()
 	
 	setup_icons()
 	
@@ -255,6 +290,90 @@ func recalc_rooms() -> Array[Dictionary]:
 		rooms_data["rooms"][id].merge(specialization_data["rooms"][id])
 	
 	return rooms_data["rooms"]
+
+func setup_oxygen() -> void:
+	_ensure_oxygen_overlay_layer()
+	
+	oxygen_by_room = OxygenLogic.create_room_oxygen(
+		rooms,
+		oxygen_default_percent
+	)
+	
+	oxygen_room_areas = OxygenLogic.calculate_room_areas(
+		rooms,
+		foundation_layer.tile_set.tile_size
+	)
+	
+	oxygen_door_links = OxygenLogic.collect_door_links(
+		foundation_layer,
+		rooms
+	)
+	
+	oxygen_hole_impacts = OxygenLogic.collect_hole_impacts(
+		foundation_layer,
+		rooms
+	)
+	
+	oxygen_room_polygons = OxygenLogic.create_room_oxygen_polygons(
+		rooms,
+		foundation_layer,
+		oxygen_overlay_layer
+	)
+	
+	OxygenLogic.update_room_oxygen_polygons(
+		oxygen_room_polygons,
+		oxygen_by_room,
+		oxygen_visual_max_alpha
+	)
+
+
+func process_oxygen(delta: float) -> void:
+	oxygen_hole_recheck_timer += delta
+	
+	if oxygen_hole_recheck_timer >= oxygen_hole_recheck_interval:
+		oxygen_hole_recheck_timer = 0.0
+		
+		oxygen_hole_impacts = OxygenLogic.collect_hole_impacts(
+			foundation_layer,
+			rooms
+		)
+	
+	oxygen_pawn_consumption = OxygenLogic.collect_pawn_consumption(
+		foundation_layer,
+		rooms,
+		pawns
+	)
+	
+	oxygen_by_room = OxygenLogic.process_oxygen_tick(
+		oxygen_by_room,
+		oxygen_room_areas,
+		oxygen_door_links,
+		oxygen_hole_impacts,
+		oxygen_pawn_consumption,
+		foundation_layer,
+		delta,
+		oxygen_air_production_per_second,
+		oxygen_door_flow_per_second,
+		oxygen_exterior_loss_per_second,
+		oxygen_hole_loss_per_impact
+	)
+	
+	OxygenLogic.update_room_oxygen_polygons(
+		oxygen_room_polygons,
+		oxygen_by_room,
+		oxygen_visual_max_alpha
+	)
+
+
+func _ensure_oxygen_overlay_layer() -> void:
+	if oxygen_overlay_layer != null:
+		return
+	
+	oxygen_overlay_layer = Node2D.new()
+	oxygen_overlay_layer.name = "OxygenOverlay"
+	oxygen_overlay_layer.z_index = 20
+	
+	add_child(oxygen_overlay_layer)
 
 func setup_icons():
 	for child in icons_layer.get_children():

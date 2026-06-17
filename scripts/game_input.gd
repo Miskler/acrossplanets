@@ -1,7 +1,6 @@
 extends Node2D
 
 
-var selected_pawn_uuid: String = ""
 var selected_pawn_uuids: Dictionary = {}
 
 var under_mouse: PhysicsPointQueryParameters2D
@@ -264,7 +263,6 @@ func select_pawns_in_rect(global_rect: Rect2) -> void:
 		var uuid: String = str(pawn.get_meta("uuid"))
 		
 		selected_pawn_uuids[uuid] = true
-		selected_pawn_uuid = uuid
 		
 		get_parent().pawns[uuid]["node"].set_selected(true)
 
@@ -275,7 +273,6 @@ func clear_pawn_selection() -> void:
 		get_parent().pawns[uuid]["node"].set_selected(false)
 	
 	selected_pawn_uuids.clear()
-	selected_pawn_uuid = ""
 
 
 func door_selected(
@@ -325,7 +322,6 @@ func pawn_selected(
 	if deselect:
 		return
 	
-	selected_pawn_uuid = uuid
 	selected_pawn_uuids[uuid] = true
 	
 	pawn.set_selected(true)
