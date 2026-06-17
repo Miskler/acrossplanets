@@ -23,8 +23,8 @@ const CAUSE_NO_PATH: String = "There is no path"
 
 static func postprocess_smooth_steps(
 	steps: Array[Dictionary],
-	corner_radius_px: float = 32.0,
-	segments_per_corner: int = 10
+	corner_radius_px: float = 16.0,
+	segments_per_corner: int = 3
 ) -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 

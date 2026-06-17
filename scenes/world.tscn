@@ -43,7 +43,6 @@ script = ExtResource("18_pm21f")
 [node name="Pawns" type="Node2D" parent="TileWorld" unique_id=392873026]
 
 [node name="Node" type="Node2D" parent="." unique_id=1654736266 node_paths=PackedStringArray("starship")]
-visible = false
 position = Vector2(308, 361)
 script = ExtResource("18_4kbfs")
 starship = NodePath("../TileWorld")
