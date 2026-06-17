@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="AcrossPlanets"
-run/main_scene="uid://cd5eulfo5s1wb"
+run/main_scene="uid://d1df6wypa7h0m"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 config/run/main_scene="res://scenes/interface.tscn"

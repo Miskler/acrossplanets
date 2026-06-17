@@ -22,11 +22,103 @@ const CAUSE_TO_IS_NOT_FLOOR: String = "Target cell is not floor"
 const CAUSE_NO_PATH: String = "There is no path"
 
 
+static func postprocess_smooth_points(
+	points: PackedVector2Array,
+	corner_radius_px: float = 16.0,
+	segments_per_corner: int = 5
+) -> PackedVector2Array:
+	var result: PackedVector2Array = PackedVector2Array()
+
+	if points.size() <= 2:
+		return points
+
+	segments_per_corner = maxi(segments_per_corner, 1)
+	corner_radius_px = maxf(corner_radius_px, 0.0)
+
+	result.append(points[0])
+
+	for i: int in range(1, points.size() - 1):
+		var prev: Vector2 = points[i - 1]
+		var current: Vector2 = points[i]
+		var next: Vector2 = points[i + 1]
+
+		var prev_vec: Vector2 = current - prev
+		var next_vec: Vector2 = next - current
+
+		var prev_len: float = prev_vec.length()
+		var next_len: float = next_vec.length()
+
+		if prev_len < 0.001 or next_len < 0.001:
+			_append_unique_point(result, current)
+			continue
+
+		var prev_dir: Vector2 = prev_vec / prev_len
+		var next_dir: Vector2 = next_vec / next_len
+
+		# Если почти прямая линия — не скругляем.
+		var dot_value: float = clampf(prev_dir.dot(next_dir), -1.0, 1.0)
+
+		if dot_value > 0.999:
+			_append_unique_point(result, current)
+			continue
+
+		var trim: float = minf(
+			corner_radius_px,
+			minf(prev_len * 0.45, next_len * 0.45)
+		)
+
+		var corner_start: Vector2 = current - prev_dir * trim
+		var corner_end: Vector2 = current + next_dir * trim
+
+		_append_unique_point(result, corner_start)
+
+		for segment_index: int in range(1, segments_per_corner + 1):
+			var t: float = float(segment_index) / float(segments_per_corner)
+			var p: Vector2 = _quadratic_bezier(
+				corner_start,
+				current,
+				corner_end,
+				t
+			)
+
+			_append_unique_point(result, p)
+
+	_append_unique_point(result, points[points.size() - 1])
+
+	return result
+
+
+static func _quadratic_bezier(
+	a: Vector2,
+	b: Vector2,
+	c: Vector2,
+	t: float
+) -> Vector2:
+	var ab: Vector2 = a.lerp(b, t)
+	var bc: Vector2 = b.lerp(c, t)
+
+	return ab.lerp(bc, t)
+
+
+static func _append_unique_point(
+	points: PackedVector2Array,
+	point: Vector2
+) -> void:
+	if points.size() > 0:
+		var last_point: Vector2 = points[points.size() - 1]
+
+		if last_point.distance_to(point) < 0.001:
+			return
+
+	points.append(point)
+
+
 static func calculate(
 	tile_layer: TileMapLayer,
+	rooms: Array,
 	from_cell: Vector2i,
 	to_cell: Vector2i,
-	door_margin_px: float = 0.3
+	door_margin_px: float = 10
 ) -> Dictionary:
 	var result: Dictionary = {
 		"valid": true,
@@ -54,17 +146,16 @@ static func calculate(
 		})
 		return result
 
-	var from_kind: int = _get_cell_path_kind(tile_layer, from_cell)
-	var to_kind: int = _get_cell_path_kind(tile_layer, to_cell)
+	var allowed_floor_cells: Dictionary = _collect_allowed_floor_cells_from_rooms(rooms)
 
-	if from_kind != PathKind.FLOOR:
+	if not allowed_floor_cells.has(from_cell):
 		result["valid"] = false
 		result["errors"].append({
 			"cell": from_cell,
 			"cause": CAUSE_FROM_IS_NOT_FLOOR
 		})
 
-	if to_kind != PathKind.FLOOR:
+	if not allowed_floor_cells.has(to_cell):
 		result["valid"] = false
 		result["errors"].append({
 			"cell": to_cell,
@@ -74,7 +165,11 @@ static func calculate(
 	if not result["valid"]:
 		return result
 
-	var path_cells_by_kind: Dictionary = _collect_path_cells(tile_layer)
+	var path_cells_by_kind: Dictionary = _collect_path_cells(
+		tile_layer,
+		allowed_floor_cells
+	)
+
 	var astar: AStarGrid2D = _build_astar(tile_layer, path_cells_by_kind)
 
 	if not astar.is_in_boundsv(from_cell) or not astar.is_in_boundsv(to_cell):
@@ -120,9 +215,10 @@ static func calculate(
 
 static func calculate_from_global(
 	tile_layer: TileMapLayer,
+	rooms: Array,
 	from_global_position: Vector2,
 	to_global_position: Vector2,
-	door_margin_px: float = 0.5
+	door_margin_px: float = 0.3
 ) -> Dictionary:
 	var from_cell: Vector2i = tile_layer.local_to_map(
 		tile_layer.to_local(from_global_position)
@@ -134,21 +230,59 @@ static func calculate_from_global(
 
 	return calculate(
 		tile_layer,
+		rooms,
 		from_cell,
 		to_cell,
 		door_margin_px
 	)
 
 
-static func _collect_path_cells(tile_layer: TileMapLayer) -> Dictionary:
+static func _collect_allowed_floor_cells_from_rooms(
+	rooms: Array
+) -> Dictionary:
+	var result: Dictionary = {}
+
+	for room_variant: Variant in rooms:
+		if typeof(room_variant) != TYPE_DICTIONARY:
+			continue
+
+		var room: Dictionary = room_variant
+		var raw_floor_cells: Variant = room.get("floor_cells", [])
+
+		if typeof(raw_floor_cells) != TYPE_ARRAY:
+			continue
+
+		var floor_cells: Array = raw_floor_cells
+
+		for cell_variant: Variant in floor_cells:
+			if typeof(cell_variant) != TYPE_VECTOR2I:
+				continue
+
+			var cell: Vector2i = cell_variant
+			result[cell] = true
+
+	return result
+
+
+static func _collect_path_cells(
+	tile_layer: TileMapLayer,
+	allowed_floor_cells: Dictionary
+) -> Dictionary:
 	var result: Dictionary = {}
 	var used_cells: Array[Vector2i] = tile_layer.get_used_cells()
 
 	for cell: Vector2i in used_cells:
 		var kind: int = _get_cell_path_kind(tile_layer, cell)
 
-		if kind == PathKind.FLOOR or kind == PathKind.DOOR:
-			result[cell] = kind
+		if kind == PathKind.FLOOR:
+			if allowed_floor_cells.has(cell):
+				result[cell] = PathKind.FLOOR
+
+			continue
+
+		if kind == PathKind.DOOR:
+			result[cell] = PathKind.DOOR
+			continue
 
 	return result
 
@@ -212,7 +346,6 @@ static func _build_astar(
 
 	return astar
 
-
 static func _build_control_points(
 	tile_layer: TileMapLayer,
 	cell_path: Array[Vector2i],
@@ -242,58 +375,97 @@ static func _build_control_points(
 		}
 	)
 
-	for i: int in range(1, cell_path.size()):
+	var skipped_cells: Dictionary = {}
+
+	var i: int = 1
+
+	while i < cell_path.size():
 		var previous_cell: Vector2i = cell_path[i - 1]
 		var current_cell: Vector2i = cell_path[i]
-
-		var previous_kind: int = int(path_cells_by_kind.get(previous_cell, PathKind.BLOCKED))
 		var current_kind: int = int(path_cells_by_kind.get(current_cell, PathKind.BLOCKED))
 
+		if skipped_cells.has(current_cell):
+			i += 1
+			continue
+
 		if current_kind == PathKind.DOOR:
-			if previous_kind == PathKind.FLOOR:
-				var enter_point: Vector2 = _door_side_point_global(
+			var door_start_index: int = i
+			var door_end_index: int = i
+
+			while door_end_index + 1 < cell_path.size():
+				var next_path_cell: Vector2i = cell_path[door_end_index + 1]
+				var next_path_kind: int = int(path_cells_by_kind.get(next_path_cell, PathKind.BLOCKED))
+
+				if next_path_kind != PathKind.DOOR:
+					break
+
+				door_end_index += 1
+
+			var first_door_cell: Vector2i = cell_path[door_start_index]
+			var last_door_cell: Vector2i = cell_path[door_end_index]
+
+			var door_group: Array[Vector2i] = _collect_connected_door_group(
+				first_door_cell,
+				path_cells_by_kind
+			)
+
+			var enter_side_cell: Vector2i = cell_path[door_start_index - 1]
+
+			var enter_point: Vector2 = _door_group_side_point_global(
+				tile_layer,
+				door_group,
+				enter_side_cell,
+				door_margin_px
+			)
+
+			_append_step(
+				points,
+				steps,
+				enter_point,
+				{
+					"cell": first_door_cell,
+					"door_cells": door_group,
+					"from_cell": enter_side_cell,
+					"kind": "door_enter",
+					"action": "open_door"
+				}
+			)
+
+			if door_end_index + 1 < cell_path.size():
+				var exit_side_cell: Vector2i = cell_path[door_end_index + 1]
+
+				var exit_point: Vector2 = _door_group_side_point_global(
 					tile_layer,
-					current_cell,
-					previous_cell,
+					door_group,
+					exit_side_cell,
 					door_margin_px
 				)
 
 				_append_step(
 					points,
 					steps,
-					enter_point,
+					exit_point,
 					{
-						"cell": current_cell,
-						"from_cell": previous_cell,
-						"kind": "door_enter",
-						"action": "open_door"
+						"cell": last_door_cell,
+						"door_cells": door_group,
+						"to_cell": exit_side_cell,
+						"kind": "door_exit",
+						"action": "close_door"
 					}
 				)
 
-			if i + 1 < cell_path.size():
-				var next_cell: Vector2i = cell_path[i + 1]
-				var next_kind: int = int(path_cells_by_kind.get(next_cell, PathKind.BLOCKED))
+				# ВАЖНО:
+				# Первая floor-клетка после двери уже представлена точкой door_exit.
+				# Если ещё добавить её центр, получится лишняя перемычка.
+				#
+				# Но если это конечная клетка пути, центр всё-таки нужен,
+				# чтобы пешка дошла именно до выбранной клетки.
+				var is_exit_cell_target: bool = exit_side_cell == cell_path[cell_path.size() - 1]
 
-				if next_kind == PathKind.FLOOR:
-					var exit_point: Vector2 = _door_side_point_global(
-						tile_layer,
-						current_cell,
-						next_cell,
-						door_margin_px
-					)
+				if not is_exit_cell_target:
+					skipped_cells[exit_side_cell] = true
 
-					_append_step(
-						points,
-						steps,
-						exit_point,
-						{
-							"cell": current_cell,
-							"to_cell": next_cell,
-							"kind": "door_exit",
-							"action": "close_door"
-						}
-					)
-
+			i = door_end_index + 1
 			continue
 
 		if current_kind == PathKind.FLOOR:
@@ -314,73 +486,145 @@ static func _build_control_points(
 				}
 			)
 
+		i += 1
+
 	return {
 		"points": points,
 		"steps": steps
 	}
 
-static func _door_side_point_global(
+
+static func _collect_connected_door_group(
+	start_cell: Vector2i,
+	path_cells_by_kind: Dictionary
+) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var visited: Dictionary = {}
+
+	var queue: Array[Vector2i] = [start_cell]
+	visited[start_cell] = true
+
+	var dirs: Array[Vector2i] = [
+		Vector2i(1, 0),
+		Vector2i(-1, 0),
+		Vector2i(0, 1),
+		Vector2i(0, -1)
+	]
+
+	var read_index: int = 0
+
+	while read_index < queue.size():
+		var cell: Vector2i = queue[read_index]
+		read_index += 1
+
+		result.append(cell)
+
+		for dir: Vector2i in dirs:
+			var next: Vector2i = cell + dir
+
+			if visited.has(next):
+				continue
+
+			var kind: int = int(path_cells_by_kind.get(next, PathKind.BLOCKED))
+
+			if kind != PathKind.DOOR:
+				continue
+
+			visited[next] = true
+			queue.append(next)
+
+	return result
+
+
+static func _door_group_side_point_global(
 	tile_layer: TileMapLayer,
-	door_cell: Vector2i,
+	door_group: Array[Vector2i],
 	side_cell: Vector2i,
 	door_margin_px: float
 ) -> Vector2:
-	var bounds: Rect2 = _door_navigation_local_bounds(tile_layer, door_cell)
+	if door_group.is_empty():
+		return _cell_center_global(tile_layer, side_cell)
+
+	var bounds: Rect2 = _door_group_navigation_global_bounds(
+		tile_layer,
+		door_group
+	)
 
 	if bounds.size == Vector2.ZERO:
-		return _door_fallback_side_point_global(
+		bounds = _door_group_tile_global_bounds(
 			tile_layer,
-			door_cell,
-			side_cell,
-			door_margin_px
+			door_group
 		)
 
-	var direction_from_door_to_side: Vector2i = side_cell - door_cell
+	var door_center: Vector2 = bounds.position + bounds.size * 0.5
+	var side_center: Vector2 = _cell_center_global(tile_layer, side_cell)
+	var direction_from_door_to_side: Vector2 = side_center - door_center
 
-	var local_point: Vector2 = bounds.position + bounds.size * 0.5
+	var point: Vector2 = door_center
 
 	if abs(direction_from_door_to_side.x) > abs(direction_from_door_to_side.y):
-		if direction_from_door_to_side.x < 0:
-			local_point.x = bounds.position.x - door_margin_px
+		if direction_from_door_to_side.x < 0.0:
+			point.x = bounds.position.x - door_margin_px
 		else:
-			local_point.x = bounds.position.x + bounds.size.x + door_margin_px
+			point.x = bounds.position.x + bounds.size.x + door_margin_px
 	else:
-		if direction_from_door_to_side.y < 0:
-			local_point.y = bounds.position.y - door_margin_px
+		if direction_from_door_to_side.y < 0.0:
+			point.y = bounds.position.y - door_margin_px
 		else:
-			local_point.y = bounds.position.y + bounds.size.y + door_margin_px
+			point.y = bounds.position.y + bounds.size.y + door_margin_px
 
-	var cell_local_center: Vector2 = tile_layer.map_to_local(door_cell)
+	return point
 
-	return tile_layer.to_global(cell_local_center + local_point)
 
-static func _door_fallback_side_point_global(
+static func _door_group_navigation_global_bounds(
 	tile_layer: TileMapLayer,
-	door_cell: Vector2i,
-	side_cell: Vector2i,
-	door_margin_px: float
-) -> Vector2:
+	door_group: Array[Vector2i]
+) -> Rect2:
+	var all_points: PackedVector2Array = PackedVector2Array()
+
+	for door_cell: Vector2i in door_group:
+		var local_points: PackedVector2Array = _get_navigation_local_points(
+			tile_layer,
+			door_cell,
+			DOOR_NAVIGATION_LAYER
+		)
+
+		var cell_local_center: Vector2 = tile_layer.map_to_local(door_cell)
+
+		for local_point: Vector2 in local_points:
+			var layer_local_point: Vector2 = cell_local_center + local_point
+			var global_point: Vector2 = tile_layer.to_global(layer_local_point)
+			all_points.append(global_point)
+
+	if all_points.is_empty():
+		return Rect2(Vector2.ZERO, Vector2.ZERO)
+
+	return _points_bounds(all_points)
+
+
+static func _door_group_tile_global_bounds(
+	tile_layer: TileMapLayer,
+	door_group: Array[Vector2i]
+) -> Rect2:
+	var all_points: PackedVector2Array = PackedVector2Array()
 	var tile_size: Vector2 = Vector2(tile_layer.tile_set.tile_size)
 	var half_size: Vector2 = tile_size * 0.5
 
-	var direction_from_door_to_side: Vector2i = side_cell - door_cell
+	for door_cell: Vector2i in door_group:
+		var center: Vector2 = tile_layer.map_to_local(door_cell)
 
-	var local_point: Vector2 = Vector2.ZERO
+		var local_points: PackedVector2Array = PackedVector2Array([
+			center + Vector2(-half_size.x, -half_size.y),
+			center + Vector2(half_size.x, -half_size.y),
+			center + Vector2(half_size.x, half_size.y),
+			center + Vector2(-half_size.x, half_size.y)
+		])
 
-	if abs(direction_from_door_to_side.x) > abs(direction_from_door_to_side.y):
-		if direction_from_door_to_side.x < 0:
-			local_point.x = -half_size.x - door_margin_px
-		else:
-			local_point.x = half_size.x + door_margin_px
-	else:
-		if direction_from_door_to_side.y < 0:
-			local_point.y = -half_size.y - door_margin_px
-		else:
-			local_point.y = half_size.y + door_margin_px
+		for local_point: Vector2 in local_points:
+			all_points.append(tile_layer.to_global(local_point))
 
-	var cell_local_center: Vector2 = tile_layer.map_to_local(door_cell)
-
-	return tile_layer.to_global(cell_local_center + local_point)
+	return _points_bounds(all_points)
+	
 
 static func _append_step(
 	points: PackedVector2Array,
@@ -407,22 +651,6 @@ static func _cell_center_global(
 ) -> Vector2:
 	var local_position: Vector2 = tile_layer.map_to_local(cell)
 	return tile_layer.to_global(local_position)
-
-
-static func _door_navigation_local_bounds(
-	tile_layer: TileMapLayer,
-	door_cell: Vector2i
-) -> Rect2:
-	var points: PackedVector2Array = _get_navigation_local_points(
-		tile_layer,
-		door_cell,
-		DOOR_NAVIGATION_LAYER
-	)
-
-	if points.is_empty():
-		return Rect2(Vector2.ZERO, Vector2.ZERO)
-
-	return _points_bounds(points)
 
 
 static func _get_navigation_local_points(

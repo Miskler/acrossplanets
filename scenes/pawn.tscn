@@ -1,18 +1,18 @@
 [gd_scene format=3 uid="uid://d2ltkmdw8vb0a"]
 
-[ext_resource type="Texture2D" uid="uid://5ycx550gyxoo" path="res://icon.svg" id="1_bab8k"]
+[ext_resource type="Script" uid="uid://clbvs8vtimav5" path="res://scripts/pawn.gd" id="1_ccfo0"]
+[ext_resource type="SpriteFrames" uid="uid://cyym0drqtgjb0" path="res://assets/races/races.tres" id="2_eqwak"]
 
-[sub_resource type="RectangleShape2D" id="RectangleShape2D_ttflf"]
-size = Vector2(38, 38)
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_ccfo0"]
+size = Vector2(40, 40)
 
-[node name="Pawn" type="Area2D" unique_id=1217865856]
-visible = false
-collision_layer = 128
-collision_mask = 0
+[node name="Pawn" type="Area2D" unique_id=1696700355 groups=["pawn"]]
+script = ExtResource("1_ccfo0")
 
-[node name="Icon" type="Sprite2D" parent="." unique_id=582413818]
-scale = Vector2(0.2929688, 0.2929688)
-texture = ExtResource("1_bab8k")
+[node name="Sprite" type="AnimatedSprite2D" parent="." unique_id=1882085587]
+scale = Vector2(0.61956525, 0.6195652)
+sprite_frames = ExtResource("2_eqwak")
+animation = &"human_top_standing"
 
-[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1987510491]
-shape = SubResource("RectangleShape2D_ttflf")
+[node name="Clickup" type="CollisionShape2D" parent="." unique_id=1038787742]
+shape = SubResource("RectangleShape2D_ccfo0")

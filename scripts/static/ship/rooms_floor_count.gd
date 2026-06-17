@@ -97,7 +97,6 @@ static func validate(
 			excluded_floor_cells
 		)
 
-		print(main_floor_cells)
 		var room_main_floor_cells: Array[Vector2i] = _get_main_floor_cells_in_room_by_coordinates(
 			room_floor_cells,
 			main_floor_cells

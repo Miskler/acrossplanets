@@ -1,0 +1,133 @@
+[gd_scene format=3 uid="uid://c8ku4jfqv6od0"]
+
+[ext_resource type="Shader" uid="uid://bt0jynyveawi4" path="res://scripts/space.gdshader" id="1_b6e46"]
+[ext_resource type="PackedScene" uid="uid://clqvlybt45o7r" path="res://planets/Star/Star.tscn" id="2_td6w2"]
+[ext_resource type="PackedScene" uid="uid://nn5fi105o1xv" path="res://planets/BlackHole/BlackHole.tscn" id="3_r2thq"]
+[ext_resource type="PackedScene" uid="uid://bwvk0bdbotelo" path="res://planets/GasPlanet/GasPlanet.tscn" id="4_0470j"]
+[ext_resource type="PackedScene" uid="uid://xjrxhq67hgl7" path="res://planets/LavaWorld/LavaWorld.tscn" id="5_ivgg2"]
+[ext_resource type="PackedScene" uid="uid://chh0bjjvjt2v8" path="res://planets/LandMasses/LandMasses.tscn" id="6_r4ipc"]
+[ext_resource type="PackedScene" uid="uid://cax1rhbpl13hv" path="res://planets/IceWorld/IceWorld.tscn" id="7_5xduy"]
+[ext_resource type="PackedScene" uid="uid://deyy6w0ssnedu" path="res://planets/NoAtmosphere/NoAtmosphere.tscn" id="8_fligg"]
+[ext_resource type="PackedScene" uid="uid://crdxh2i35dorc" path="res://planets/Rivers/Rivers.tscn" id="9_mhjnw"]
+[ext_resource type="PackedScene" uid="uid://cqwgwog1pm6s3" path="res://planets/DryTerran/DryTerran.tscn" id="10_0y13x"]
+[ext_resource type="PackedScene" uid="uid://bj7tr13ilvj3h" path="res://planets/Asteroids/Asteroid.tscn" id="11_iquee"]
+[ext_resource type="Script" uid="uid://udib0fxhebjd" path="res://scripts/effects.gd" id="12_plk4d"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_f17e3"]
+shader = ExtResource("1_b6e46")
+shader_parameter/anim_speed = 0.0010002375475002268
+shader_parameter/star_brightness = 0.0170000008075
+shader_parameter/dust = 0.0010000000475
+shader_parameter/dist_fade = 0.410000019475
+shader_parameter/pixelation = 116.3990031539525
+shader_parameter/quantization_levels = 256
+shader_parameter/dust_color = Color(0, 4.422663, 4.5458884, 1)
+shader_parameter/saturation = 1.0
+shader_parameter/layers = 9.0
+shader_parameter/iterations = 6
+
+[node name="Background" type="CanvasLayer" unique_id=34871423]
+layer = -100
+
+[node name="Background" type="ColorRect" parent="." unique_id=2022670140]
+material = SubResource("ShaderMaterial_f17e3")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 1)
+
+[node name="Central" type="Control" parent="." unique_id=1520927417]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Star" parent="Central" unique_id=1964155241 instance=ExtResource("2_td6w2")]
+layout_mode = 1
+offset_left = 826.0
+offset_top = 692.0
+offset_right = -223.0
+offset_bottom = 146.0
+scale = Vector2(7.01, 7.01)
+
+[node name="BlackHoll" parent="Central" unique_id=2085034604 instance=ExtResource("3_r2thq")]
+visible = false
+layout_mode = 1
+offset_left = 571.0
+offset_top = -80.000015
+offset_right = 303.0
+offset_bottom = -280.0
+rotation = 0.74351025
+scale = Vector2(5.92, 5.92)
+
+[node name="GasGigant" parent="Central" unique_id=1795914464 instance=ExtResource("4_0470j")]
+visible = false
+layout_mode = 1
+offset_left = 827.00006
+offset_top = 572.00006
+offset_right = 415.0
+offset_bottom = 372.0
+scale = Vector2(7.12, 7.12)
+
+[node name="Side" type="Control" parent="." unique_id=384376934]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 642.99994
+offset_top = 189.0
+offset_right = 643.0
+offset_bottom = 189.0
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(5.49, 5.49)
+
+[node name="Lava" parent="Side" unique_id=507744998 instance=ExtResource("5_ivgg2")]
+visible = false
+layout_mode = 1
+offset_right = -40.0
+offset_bottom = -40.0
+
+[node name="Ocean" parent="Side" unique_id=748940784 instance=ExtResource("6_r4ipc")]
+visible = false
+layout_mode = 1
+
+[node name="Ice" parent="Side" unique_id=1979406998 instance=ExtResource("7_5xduy")]
+visible = false
+layout_mode = 1
+
+[node name="NoAtmosphere" parent="Side" unique_id=1389231330 instance=ExtResource("8_fligg")]
+visible = false
+layout_mode = 1
+
+[node name="Continental" parent="Side" unique_id=756738735 instance=ExtResource("9_mhjnw")]
+visible = false
+layout_mode = 1
+
+[node name="GasGigant" parent="Side" unique_id=731665543 instance=ExtResource("4_0470j")]
+layout_mode = 1
+
+[node name="MarsSimilar" parent="Side" unique_id=1505672985 instance=ExtResource("10_0y13x")]
+visible = false
+layout_mode = 1
+
+[node name="Asteroid" parent="Side" unique_id=1610138961 instance=ExtResource("11_iquee")]
+visible = false
+layout_mode = 1
+offset_left = -4.7358723
+offset_top = -4.7358837
+offset_right = -416.7359
+offset_bottom = -204.73587
+
+[node name="Effects" type="Control" parent="." unique_id=2028997569]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("12_plk4d")

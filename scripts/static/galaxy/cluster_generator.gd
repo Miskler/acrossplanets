@@ -136,7 +136,6 @@ static func generate_spiral_galaxy(
 			if t > 0.25 and t < 0.85 and rng.randf() < spur_chance:
 				var spur_length: int = rng.randi_range(1, 2)
 				var spur_side: float = 1.0 if rng.randf() < 0.5 else -1.0
-				var spur_parent: String = sector_id
 				for spur_step in range(spur_length):
 					var spur_t: float = float(spur_step + 1) * 0.5
 					var spur_angle: float = final_angle + spur_side * 0.25 * spur_t

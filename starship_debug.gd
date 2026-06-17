@@ -3,14 +3,10 @@ extends Node2D
 @export var starship: Starship
 
 func _ready() -> void:
+	
+	
 	var rooms: Dictionary = ShipRooms.validate(starship.foundation_layer, starship.SAMPLES_PER_TILE)
 	
-	#var station_data: Dictionary = ShipRoomSpecialization.validate(
-	#	starship.stations_layer,
-	#	rooms["rooms"]
-	#)
-	
-	#print(station_data)
 	#print()
 	#for error in station_data["errors"]:
 	#	print(error["cause"])
@@ -53,20 +49,19 @@ func _ready() -> void:
 	)
 	
 	for room in floor_validation["rooms"]:
-		print(room)
 		for cell in room["floor_cells"]:
 			create_cell(cell, Color.GREEN if cell != room["floor_main"] else Color.YELLOW)
 		for cell in room["excluded_floor_cells"]:
 			create_cell(cell, Color.RED)
 	
-	#print(floor_validation)
-	
 	var path_data: Dictionary = ShipPathfinder.calculate(
 		starship.foundation_layer,
+		floor_validation["rooms"],
 		floor_validation["rooms"][0]["floor_main"],
 		floor_validation["rooms"][-1]["floor_main"]
 	)
 	
+	path_data["points"] = ShipPathfinder.postprocess_smooth_points(path_data["points"], 16)
 	draw_debug_path(path_data)
 
 
