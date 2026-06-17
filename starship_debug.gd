@@ -53,30 +53,33 @@ func _ready() -> void:
 	)
 	
 	for room in floor_validation["rooms"]:
-		#print(room)
+		print(room)
 		for cell in room["floor_cells"]:
-			create_cell(cell, Color.GREEN)
+			create_cell(cell, Color.GREEN if cell != room["floor_main"] else Color.YELLOW)
 		for cell in room["excluded_floor_cells"]:
 			create_cell(cell, Color.RED)
 	
 	#print(floor_validation)
 	
-	#var path_data: Dictionary = ShipPathfinder.calculate(
-	#	$Foundation,
-	#	Vector2i(-3, -2),
-	#	Vector2i(2, 2)
-	#)
+	var path_data: Dictionary = ShipPathfinder.calculate(
+		starship.foundation_layer,
+		floor_validation["rooms"][0]["floor_main"],
+		floor_validation["rooms"][-1]["floor_main"]
+	)
 	
-	#draw_debug_path(path_data)
+	draw_debug_path(path_data)
+
 
 func create_cell(cell: Vector2i, clr: Color):
+	var margin = 4
+	var margin_vec = Vector2(margin, margin)
 	var real_cell = starship.foundation_layer.map_to_local(cell)
 	var node = ReferenceRect.new()
-	node.border_width = 4
+	node.border_width = margin
 	node.editor_only = false
 	node.border_color = clr
-	node.position = real_cell - starship.foundation_layer.tile_set.tile_size / 2.0
-	node.size = starship.foundation_layer.tile_set.tile_size
+	node.position = real_cell - starship.foundation_layer.tile_set.tile_size / 2.0 + margin_vec / 2.0
+	node.size = starship.foundation_layer.tile_set.tile_size - Vector2i(margin_vec)
 	add_child(node)
 
 func draw_debug_path(path_data: Dictionary) -> void:
