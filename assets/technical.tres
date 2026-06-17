@@ -1,0 +1,14 @@
+[gd_resource type="TileSet" format=3 uid="uid://br7o10k50vbiy"]
+
+[ext_resource type="Texture2D" uid="uid://dlgr8owfdtas4" path="res://assets/technical.png" id="1_dkisa"]
+
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_cv7j6"]
+texture = ExtResource("1_dkisa")
+texture_region_size = Vector2i(8, 8)
+0:0/0 = 0
+
+[resource]
+tile_size = Vector2i(8, 8)
+custom_data_layer_0/name = "type"
+custom_data_layer_0/type = 4
+sources/0 = SubResource("TileSetAtlasSource_cv7j6")
