@@ -21,6 +21,135 @@ const CAUSE_FROM_IS_NOT_FLOOR: String = "Start cell is not floor"
 const CAUSE_TO_IS_NOT_FLOOR: String = "Target cell is not floor"
 const CAUSE_NO_PATH: String = "There is no path"
 
+
+static func get_neighbor_room_indexes(
+	tile_layer: TileMapLayer,
+	rooms: Array,
+	room_index: int
+) -> Array[int]:
+	var result: Array[int] = []
+
+	if tile_layer == null:
+		return result
+
+	if tile_layer.tile_set == null:
+		return result
+
+	if room_index < 0 or room_index >= rooms.size():
+		return result
+
+	var target_room_variant: Variant = rooms[room_index]
+
+	if typeof(target_room_variant) != TYPE_DICTIONARY:
+		return result
+
+	var target_room: Dictionary = target_room_variant
+	var raw_target_floor_cells: Variant = target_room.get("floor_cells", [])
+
+	if typeof(raw_target_floor_cells) != TYPE_ARRAY:
+		return result
+
+	var cell_to_room_indexes: Dictionary = {}
+
+	for current_room_index: int in range(rooms.size()):
+		var room_variant: Variant = rooms[current_room_index]
+
+		if typeof(room_variant) != TYPE_DICTIONARY:
+			continue
+
+		var room: Dictionary = room_variant
+		var raw_floor_cells: Variant = room.get("floor_cells", [])
+
+		if typeof(raw_floor_cells) != TYPE_ARRAY:
+			continue
+
+		var floor_cells: Array = raw_floor_cells
+
+		for cell_variant: Variant in floor_cells:
+			if typeof(cell_variant) != TYPE_VECTOR2I:
+				continue
+
+			var cell: Vector2i = cell_variant
+
+			if not cell_to_room_indexes.has(cell):
+				cell_to_room_indexes[cell] = []
+
+			var room_indexes: Array = cell_to_room_indexes[cell]
+			room_indexes.append(current_room_index)
+
+	var allowed_floor_cells: Dictionary = _collect_allowed_floor_cells_from_rooms(rooms)
+
+	var path_cells_by_kind: Dictionary = _collect_path_cells(
+		tile_layer,
+		allowed_floor_cells
+	)
+
+	var dirs: Array[Vector2i] = [
+		Vector2i(1, 0),
+		Vector2i(-1, 0),
+		Vector2i(0, 1),
+		Vector2i(0, -1)
+	]
+
+	var checked_door_cells: Dictionary = {}
+	var found_neighbor_indexes: Dictionary = {}
+
+	var target_floor_cells: Array = raw_target_floor_cells
+
+	for cell_variant: Variant in target_floor_cells:
+		if typeof(cell_variant) != TYPE_VECTOR2I:
+			continue
+
+		var floor_cell: Vector2i = cell_variant
+
+		for dir: Vector2i in dirs:
+			var near_cell: Vector2i = floor_cell + dir
+			var near_kind: int = int(path_cells_by_kind.get(near_cell, PathKind.BLOCKED))
+
+			if near_kind != PathKind.DOOR:
+				continue
+
+			if checked_door_cells.has(near_cell):
+				continue
+
+			var door_group: Array[Vector2i] = _collect_connected_door_group(
+				near_cell,
+				path_cells_by_kind
+			)
+
+			for door_cell: Vector2i in door_group:
+				checked_door_cells[door_cell] = true
+
+			for door_cell: Vector2i in door_group:
+				for door_dir: Vector2i in dirs:
+					var side_cell: Vector2i = door_cell + door_dir
+
+					if not cell_to_room_indexes.has(side_cell):
+						continue
+
+					var side_room_indexes: Array = cell_to_room_indexes[side_cell]
+
+					for side_room_index_variant: Variant in side_room_indexes:
+						if typeof(side_room_index_variant) != TYPE_INT:
+							continue
+
+						var side_room_index: int = side_room_index_variant
+
+						if side_room_index == room_index:
+							continue
+
+						found_neighbor_indexes[side_room_index] = true
+
+	for neighbor_index_variant: Variant in found_neighbor_indexes.keys():
+		if typeof(neighbor_index_variant) != TYPE_INT:
+			continue
+
+		var neighbor_index: int = neighbor_index_variant
+		result.append(neighbor_index)
+
+	return result
+
+
 static func postprocess_smooth_steps(
 	steps: Array[Dictionary],
 	corner_radius_px: float = 16.0,

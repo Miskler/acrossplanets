@@ -18,33 +18,82 @@ static func create_room_oxygen(
 	var result: Dictionary = {}
 	
 	for room_index: int in range(rooms.size()):
-		var room: Dictionary = rooms[room_index]
-		var room_id: int = _room_id(room, room_index)
-		result[room_id] = default_oxygen
+		result[room_index] = default_oxygen
 	
 	return result
 
-static func collect_pawn_consumption(
+
+static func create_consumption_by_room(
+	rooms: Array[Dictionary]
+) -> Dictionary:
+	var result: Dictionary = {}
+	
+	for room_index: int in range(rooms.size()):
+		result[room_index] = 0.0
+	
+	return result
+
+
+static func add_pawn_consumption(
+	consumption_by_room: Dictionary,
 	foundation_layer: TileMapLayer,
 	rooms: Array[Dictionary],
 	pawns: Dictionary
-) -> Dictionary:
-	var result: Dictionary = {}
+) -> void:
 	var room_by_cell: Dictionary = build_room_cell_index(rooms)
 	
 	for pawn_data: Dictionary in pawns.values():
 		var pawn_node: Node2D = pawn_data["node"]
 		var cell: Vector2i = foundation_layer.local_to_map(pawn_node.position)
+		var room_index: int = int(room_by_cell[cell])
 		
-		if not room_by_cell.has(cell):
+		consumption_by_room[room_index] = (
+			float(consumption_by_room[room_index])
+			+ pawn_node.oxygen_consumption
+		)
+
+
+static func add_fire_consumption(
+	consumption_by_room: Dictionary,
+	rooms: Array[Dictionary],
+	fires: Dictionary
+) -> void:
+	var room_by_cell: Dictionary = build_room_cell_index(rooms)
+	
+	for fire_cell: Vector2i in fires.keys():
+		var fire_node: Node2D = fires[fire_cell]["node"]
+		var room_index: int = int(room_by_cell[fire_cell])
+		
+		consumption_by_room[room_index] = (
+			float(consumption_by_room[room_index])
+			+ fire_node.oxygen_consumption
+		)
+
+
+static func add_hole_consumption(
+	consumption_by_room: Dictionary,
+	foundation_layer: TileMapLayer,
+	rooms: Array[Dictionary],
+	hole_loss_per_impact: float
+) -> void:
+	var room_by_cell: Dictionary = build_room_cell_index(rooms)
+	
+	for cell: Vector2i in foundation_layer.get_used_cells():
+		var tile_data: TileData = foundation_layer.get_cell_tile_data(cell)
+		
+		if tile_data.get_custom_data(PATH_DATA) != PATH_FLOOR:
 			continue
 		
-		var room_id: int = int(room_by_cell[cell])
-		var consumption: float = pawn_node.oxygen_consumption
+		if tile_data.get_custom_data(STATE_DATA) != STATE_HOLE:
+			continue
 		
-		result[room_id] = float(result.get(room_id, 0.0)) + consumption
-	
-	return result
+		var room_index: int = int(room_by_cell[cell])
+		var impact: float = float(tile_data.get_custom_data(IMPACT_DATA))
+		
+		consumption_by_room[room_index] = (
+			float(consumption_by_room[room_index])
+			+ impact * hole_loss_per_impact
+		)
 
 
 static func calculate_room_areas(
@@ -56,7 +105,6 @@ static func calculate_room_areas(
 	
 	for room_index: int in range(rooms.size()):
 		var room: Dictionary = rooms[room_index]
-		var room_id: int = _room_id(room, room_index)
 		var polygons: Array = room["polygons"]
 		
 		var area_in_tiles: float = 0.0
@@ -67,7 +115,7 @@ static func calculate_room_areas(
 		if area_in_tiles <= 0.0:
 			area_in_tiles = float(room["floor_cells"].size())
 		
-		result[room_id] = maxf(area_in_tiles, 1.0)
+		result[room_index] = maxf(area_in_tiles, 1.0)
 	
 	return result
 
@@ -84,7 +132,6 @@ static func create_room_oxygen_polygons(
 	
 	for room_index: int in range(rooms.size()):
 		var room: Dictionary = rooms[room_index]
-		var room_id: int = _room_id(room, room_index)
 		var source_polygons: Array = room["polygons"]
 		var polygon_nodes: Array[Polygon2D] = []
 		
@@ -97,14 +144,14 @@ static func create_room_oxygen_polygons(
 				polygon.append(local_point)
 			
 			var polygon_node: Polygon2D = Polygon2D.new()
-			polygon_node.name = "OxygenRoom_%s" % room_id
+			polygon_node.name = "OxygenRoom_%s" % room_index
 			polygon_node.polygon = polygon
 			polygon_node.color = Color(1.0, 0.0, 0.0, 0.0)
 			
 			target_parent.add_child(polygon_node)
 			polygon_nodes.append(polygon_node)
 		
-		result[room_id] = polygon_nodes
+		result[room_index] = polygon_nodes
 	
 	return result
 
@@ -114,9 +161,8 @@ static func update_room_oxygen_polygons(
 	oxygen_by_room: Dictionary,
 	max_alpha: float = 0.65
 ) -> void:
-	for room_id_variant: Variant in polygons_by_room.keys():
-		var room_id: int = int(room_id_variant)
-		var oxygen: float = float(oxygen_by_room.get(room_id, 100.0))
+	for room_index: int in polygons_by_room.keys():
+		var oxygen: float = float(oxygen_by_room[room_index])
 		var danger: float = clampf((100.0 - oxygen) / 100.0, 0.0, 1.0)
 		
 		var color: Color = Color(
@@ -126,10 +172,7 @@ static func update_room_oxygen_polygons(
 			pow(danger, 1.35) * max_alpha
 		)
 		
-		var polygons: Array = polygons_by_room[room_id]
-		
-		for polygon_variant: Variant in polygons:
-			var polygon_node: Polygon2D = polygon_variant
+		for polygon_node: Polygon2D in polygons_by_room[room_index]:
 			polygon_node.color = color
 
 
@@ -140,37 +183,9 @@ static func build_room_cell_index(
 	
 	for room_index: int in range(rooms.size()):
 		var room: Dictionary = rooms[room_index]
-		var room_id: int = _room_id(room, room_index)
 		
 		for cell: Vector2i in room["floor_cells"]:
-			result[cell] = room_id
-	
-	return result
-
-
-static func collect_hole_impacts(
-	foundation_layer: TileMapLayer,
-	rooms: Array[Dictionary]
-) -> Dictionary:
-	var result: Dictionary = {}
-	var room_by_cell: Dictionary = build_room_cell_index(rooms)
-	
-	for cell: Vector2i in foundation_layer.get_used_cells():
-		if not room_by_cell.has(cell):
-			continue
-		
-		var tile_data: TileData = foundation_layer.get_cell_tile_data(cell)
-		
-		if tile_data.get_custom_data(PATH_DATA) != PATH_FLOOR:
-			continue
-		
-		if tile_data.get_custom_data(STATE_DATA) != STATE_HOLE:
-			continue
-		
-		var room_id: int = int(room_by_cell[cell])
-		var impact: float = float(tile_data.get_custom_data(IMPACT_DATA))
-		
-		result[room_id] = float(result.get(room_id, 0.0)) + impact
+			result[cell] = room_index
 	
 	return result
 
@@ -190,11 +205,9 @@ static func collect_door_links(
 	]
 	
 	for door_group: Array in door_groups:
-		var room_ids_set: Dictionary = {}
+		var room_indexes_set: Dictionary = {}
 		
-		for door_cell_variant: Variant in door_group:
-			var door_cell: Vector2i = door_cell_variant
-			
+		for door_cell: Vector2i in door_group:
 			for dir: Vector2i in dirs:
 				var side_cell: Vector2i = door_cell + dir
 				
@@ -202,84 +215,41 @@ static func collect_door_links(
 					continue
 				
 				if room_by_cell.has(side_cell):
-					room_ids_set[int(room_by_cell[side_cell])] = true
+					room_indexes_set[int(room_by_cell[side_cell])] = true
 		
-		var room_ids: Array[int] = []
+		var room_indexes: Array[int] = []
 		
-		for room_id_variant: Variant in room_ids_set.keys():
-			room_ids.append(int(room_id_variant))
+		for room_index: int in room_indexes_set.keys():
+			room_indexes.append(room_index)
 		
 		result.append({
 			"door_cells": door_group,
-			"room_ids": room_ids,
+			"room_ids": room_indexes,
 			"door_size": door_group.size(),
-			"exterior": room_ids.size() < 2
+			"exterior": room_indexes.size() < 2
 		})
 	
 	return result
 
-static func _distribute_produced_air(
-	air_by_room: Dictionary,
-	room_areas: Dictionary,
-	produced_air: float
-) -> void:
-	var remaining_air: float = produced_air
-	
-	while remaining_air > 0.001:
-		var room_ids: Array[int] = []
-		
-		for room_id_variant: Variant in air_by_room.keys():
-			var room_id: int = int(room_id_variant)
-			var area: float = float(room_areas[room_id])
-			var max_air: float = 100.0 * area
-			var current_air: float = float(air_by_room[room_id])
-			
-			if current_air < max_air - 0.001:
-				room_ids.append(room_id)
-		
-		if room_ids.is_empty():
-			return
-		
-		var share: float = remaining_air / float(room_ids.size())
-		var used_air: float = 0.0
-		
-		for room_id: int in room_ids:
-			var area: float = float(room_areas[room_id])
-			var max_air: float = 100.0 * area
-			var current_air: float = float(air_by_room[room_id])
-			var deficit: float = max_air - current_air
-			
-			var added_air: float = minf(share, deficit)
-			
-			air_by_room[room_id] = current_air + added_air
-			used_air += added_air
-		
-		if used_air <= 0.001:
-			return
-		
-		remaining_air -= used_air
 
 static func process_oxygen_tick(
 	oxygen_by_room: Dictionary,
 	room_areas: Dictionary,
 	door_links: Array[Dictionary],
-	hole_impacts: Dictionary,
-	pawn_consumption_by_room: Dictionary,
+	consumption_by_room: Dictionary,
 	foundation_layer: TileMapLayer,
 	delta: float,
 	air_production_per_second: float,
 	door_flow_per_second: float,
-	exterior_loss_per_second: float,
-	hole_loss_per_impact: float
+	exterior_loss_per_second: float
 ) -> Dictionary:
 	var air_by_room: Dictionary = {}
 	
-	for room_id_variant: Variant in oxygen_by_room.keys():
-		var room_id: int = int(room_id_variant)
-		var oxygen: float = clampf(float(oxygen_by_room[room_id]), 0.0, 100.0)
-		var area: float = float(room_areas[room_id])
+	for room_index: int in oxygen_by_room.keys():
+		var oxygen: float = clampf(float(oxygen_by_room[room_index]), 0.0, 100.0)
+		var area: float = float(room_areas[room_index])
 		
-		air_by_room[room_id] = oxygen * area
+		air_by_room[room_index] = oxygen * area
 	
 	for door_link: Dictionary in door_links:
 		var door_cells: Array = door_link["door_cells"]
@@ -291,41 +261,33 @@ static func process_oxygen_tick(
 		if door_state != "open":
 			continue
 		
-		var room_ids: Array = door_link["room_ids"]
+		var room_indexes: Array = door_link["room_ids"]
 		var door_size: int = int(door_link["door_size"])
 		
-		if room_ids.size() >= 2:
+		if room_indexes.size() >= 2:
 			_equalize_rooms(
 				air_by_room,
 				room_areas,
-				room_ids,
+				room_indexes,
 				delta,
 				door_flow_per_second,
 				door_size
 			)
-		elif room_ids.size() == 1:
-			var room_id: int = int(room_ids[0])
+		elif room_indexes.size() == 1:
+			var room_index: int = int(room_indexes[0])
 			var leak: float = exterior_loss_per_second * float(door_size) * delta
-			air_by_room[room_id] = maxf(0.0, float(air_by_room[room_id]) - leak)
+			
+			air_by_room[room_index] = maxf(
+				0.0,
+				float(air_by_room[room_index]) - leak
+			)
 	
-	for room_id_variant: Variant in hole_impacts.keys():
-		var room_id: int = int(room_id_variant)
+	for room_index: int in consumption_by_room.keys():
+		var consumption: float = float(consumption_by_room[room_index]) * delta
 		
-		if not air_by_room.has(room_id):
-			continue
-		
-		var impact: float = float(hole_impacts[room_id])
-		var leak: float = hole_loss_per_impact * impact * delta
-		
-		air_by_room[room_id] = maxf(0.0, float(air_by_room[room_id]) - leak)
-	
-	for room_id_variant: Variant in pawn_consumption_by_room.keys():
-		var room_id: int = int(room_id_variant)
-		var consumption: float = float(pawn_consumption_by_room[room_id]) * delta
-		
-		air_by_room[room_id] = maxf(
+		air_by_room[room_index] = maxf(
 			0.0,
-			float(air_by_room[room_id]) - consumption
+			float(air_by_room[room_index]) - consumption
 		)
 	
 	var produced_air: float = air_production_per_second * delta
@@ -339,20 +301,59 @@ static func process_oxygen_tick(
 	
 	var result: Dictionary = {}
 	
-	for room_id_variant: Variant in air_by_room.keys():
-		var room_id: int = int(room_id_variant)
-		var area: float = float(room_areas[room_id])
-		var oxygen: float = float(air_by_room[room_id]) / area
+	for room_index: int in air_by_room.keys():
+		var area: float = float(room_areas[room_index])
+		var oxygen: float = float(air_by_room[room_index]) / area
 		
-		result[room_id] = clampf(oxygen, 0.0, 100.0)
+		result[room_index] = clampf(oxygen, 0.0, 100.0)
 	
 	return result
+
+
+static func _distribute_produced_air(
+	air_by_room: Dictionary,
+	room_areas: Dictionary,
+	produced_air: float
+) -> void:
+	var remaining_air: float = produced_air
+	
+	while remaining_air > 0.001:
+		var room_indexes: Array[int] = []
+		
+		for room_index: int in air_by_room.keys():
+			var area: float = float(room_areas[room_index])
+			var max_air: float = 100.0 * area
+			var current_air: float = float(air_by_room[room_index])
+			
+			if current_air < max_air - 0.001:
+				room_indexes.append(room_index)
+		
+		if room_indexes.is_empty():
+			return
+		
+		var share: float = remaining_air / float(room_indexes.size())
+		var used_air: float = 0.0
+		
+		for room_index: int in room_indexes:
+			var area: float = float(room_areas[room_index])
+			var max_air: float = 100.0 * area
+			var current_air: float = float(air_by_room[room_index])
+			var deficit: float = max_air - current_air
+			var added_air: float = minf(share, deficit)
+			
+			air_by_room[room_index] = current_air + added_air
+			used_air += added_air
+		
+		if used_air <= 0.001:
+			return
+		
+		remaining_air -= used_air
 
 
 static func _equalize_rooms(
 	air_by_room: Dictionary,
 	room_areas: Dictionary,
-	room_ids: Array,
+	room_indexes: Array,
 	delta: float,
 	door_flow_per_second: float,
 	door_size: int
@@ -360,11 +361,9 @@ static func _equalize_rooms(
 	var total_air: float = 0.0
 	var total_area: float = 0.0
 	
-	for room_id_variant: Variant in room_ids:
-		var room_id: int = int(room_id_variant)
-		
-		total_air += float(air_by_room[room_id])
-		total_area += float(room_areas[room_id])
+	for room_index: int in room_indexes:
+		total_air += float(air_by_room[room_index])
+		total_area += float(room_areas[room_index])
 	
 	var target_oxygen: float = total_air / total_area
 	var flow: float = clampf(
@@ -373,13 +372,12 @@ static func _equalize_rooms(
 		1.0
 	)
 	
-	for room_id_variant: Variant in room_ids:
-		var room_id: int = int(room_id_variant)
-		var area: float = float(room_areas[room_id])
-		var current_air: float = float(air_by_room[room_id])
+	for room_index: int in room_indexes:
+		var area: float = float(room_areas[room_index])
+		var current_air: float = float(air_by_room[room_index])
 		var target_air: float = target_oxygen * area
 		
-		air_by_room[room_id] = lerpf(current_air, target_air, flow)
+		air_by_room[room_index] = lerpf(current_air, target_air, flow)
 
 
 static func _collect_door_groups(
@@ -402,9 +400,7 @@ static func _collect_door_groups(
 		Vector2i.UP
 	]
 	
-	for start_variant: Variant in door_cells.keys():
-		var start: Vector2i = start_variant
-		
+	for start: Vector2i in door_cells.keys():
 		if visited.has(start):
 			continue
 		
@@ -441,9 +437,7 @@ static func _array_has_cell(
 	cells: Array,
 	target_cell: Vector2i
 ) -> bool:
-	for cell_variant: Variant in cells:
-		var cell: Vector2i = cell_variant
-		
+	for cell: Vector2i in cells:
 		if cell == target_cell:
 			return true
 	
@@ -462,10 +456,3 @@ static func _polygon_area(
 		area += a.x * b.y - b.x * a.y
 	
 	return absf(area) * 0.5
-
-
-static func _room_id(
-	room: Dictionary,
-	fallback_id: int
-) -> int:
-	return int(room.get("room_id", fallback_id))

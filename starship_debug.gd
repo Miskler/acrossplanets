@@ -62,6 +62,7 @@ func _ready() -> void:
 	)
 	
 	draw_debug_path(path_data)
+	starship.fire_to_room(1)
 
 
 func create_cell(cell: Vector2i, clr: Color):

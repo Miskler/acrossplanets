@@ -13,12 +13,14 @@ signal delete_pawn_event(node, uuid)
 @onready var technical_layer = $Technical
 @onready var icons_layer = $Icons
 @onready var pawns_layer = $Pawns
+@onready var fire_layer = $Fire
 const SAMPLES_PER_TILE: int = 1
 
 var time2change_door_state = 0.2
 
 var rooms: Array[Dictionary] = []
 var pawns: Dictionary = {}
+var fires: Dictionary = {}
 
 @export var oxygen_enabled: bool = true
 @export var oxygen_default_percent: float = 100.0
@@ -38,16 +40,19 @@ var pawns: Dictionary = {}
 @export var oxygen_hole_loss_per_impact: float = 10.0
 
 @export var oxygen_visual_max_alpha: float = 0.65
-@export var oxygen_hole_recheck_interval: float = 0.25
+@export var oxygen_recheck_interval: float = 0.25
 
 var oxygen_pawn_consumption: Dictionary = {}
 var oxygen_overlay_layer: Node2D
 var oxygen_by_room: Dictionary = {}
 var oxygen_room_areas: Dictionary = {}
 var oxygen_door_links: Array[Dictionary] = []
-var oxygen_hole_impacts: Dictionary = {}
+var oxygen_consumption: Dictionary = {}
 var oxygen_room_polygons: Dictionary = {}
-var oxygen_hole_recheck_timer: float = 0.0
+var oxygen_recheck_timer: float = 0.0
+
+var fortress_doors_level: int = 0
+var fortress_doors_levels_map: Array = [0.7, 0.4, 0.2, 0.1]
 
 
 func _ready() -> void:
@@ -309,10 +314,7 @@ func setup_oxygen() -> void:
 		rooms
 	)
 	
-	oxygen_hole_impacts = OxygenLogic.collect_hole_impacts(
-		foundation_layer,
-		rooms
-	)
+	_recalculate_oxygen_consumption()
 	
 	oxygen_room_polygons = OxygenLogic.create_room_oxygen_polygons(
 		rooms,
@@ -326,36 +328,23 @@ func setup_oxygen() -> void:
 		oxygen_visual_max_alpha
 	)
 
-
 func process_oxygen(delta: float) -> void:
-	oxygen_hole_recheck_timer += delta
+	oxygen_recheck_timer += delta
 	
-	if oxygen_hole_recheck_timer >= oxygen_hole_recheck_interval:
-		oxygen_hole_recheck_timer = 0.0
-		
-		oxygen_hole_impacts = OxygenLogic.collect_hole_impacts(
-			foundation_layer,
-			rooms
-		)
-	
-	oxygen_pawn_consumption = OxygenLogic.collect_pawn_consumption(
-		foundation_layer,
-		rooms,
-		pawns
-	)
+	if oxygen_recheck_timer >= oxygen_recheck_interval:
+		oxygen_recheck_timer = 0.0
+		_recalculate_oxygen_consumption()
 	
 	oxygen_by_room = OxygenLogic.process_oxygen_tick(
 		oxygen_by_room,
 		oxygen_room_areas,
 		oxygen_door_links,
-		oxygen_hole_impacts,
-		oxygen_pawn_consumption,
+		oxygen_consumption,
 		foundation_layer,
 		delta,
 		oxygen_air_production_per_second,
 		oxygen_door_flow_per_second,
-		oxygen_exterior_loss_per_second,
-		oxygen_hole_loss_per_impact
+		oxygen_exterior_loss_per_second
 	)
 	
 	OxygenLogic.update_room_oxygen_polygons(
@@ -364,6 +353,28 @@ func process_oxygen(delta: float) -> void:
 		oxygen_visual_max_alpha
 	)
 
+func _recalculate_oxygen_consumption() -> void:
+	oxygen_consumption = OxygenLogic.create_consumption_by_room(rooms)
+	
+	OxygenLogic.add_pawn_consumption(
+		oxygen_consumption,
+		foundation_layer,
+		rooms,
+		pawns
+	)
+	
+	OxygenLogic.add_fire_consumption(
+		oxygen_consumption,
+		rooms,
+		fires
+	)
+	
+	OxygenLogic.add_hole_consumption(
+		oxygen_consumption,
+		foundation_layer,
+		rooms,
+		oxygen_hole_loss_per_impact
+	)
 
 func _ensure_oxygen_overlay_layer() -> void:
 	if oxygen_overlay_layer != null:
@@ -374,6 +385,7 @@ func _ensure_oxygen_overlay_layer() -> void:
 	oxygen_overlay_layer.z_index = 20
 	
 	add_child(oxygen_overlay_layer)
+
 
 func setup_icons():
 	for child in icons_layer.get_children():
@@ -387,6 +399,44 @@ func setup_icons():
 			icons_layer,
 			icon_size
 		)
+
+func fire_to_room(room_id: int) -> bool:
+	var available_cells = dynamically_available_cells(room_id, false, true, false)
+	if available_cells.is_empty():
+		return false
+	
+	var fire = load("res://scenes/fire.tscn").instantiate()
+	fire.set_health(2)
+	fire.set_meta("room", room_id)
+	fire.position = foundation_layer.map_to_local(available_cells[0])
+	fire.connect("fire_spreading", fire_spreading)
+	fires[available_cells[0]] = {"node": fire}
+	fire_layer.add_child(fire)
+	
+	return true
+
+func fire_spreading(fire: Node2D) -> void:
+	var room_index: int = int(fire.get_meta("room", -1))
+	
+	if fire_to_room(room_index):
+		return
+	
+	var chance: float = fortress_doors_levels_map[
+		clampi(fortress_doors_level, 0, fortress_doors_levels_map.size() - 1)
+	]
+	if randf() > chance:
+		return
+	
+	var neighbors: Array[int] = ShipPathfinder.get_neighbor_room_indexes(
+		foundation_layer,
+		rooms,
+		room_index
+	)
+	
+	neighbors.shuffle()
+	for neighbor_room_index: int in neighbors:
+		if fire_to_room(neighbor_room_index):
+			return
 
 func pawn_to_cell(pawn_id: String, target_cell: Vector2i) -> void:
 	var available_cells: Array[Vector2i] = dynamically_available_cells()
@@ -421,25 +471,37 @@ func pawn_to_cell(pawn_id: String, target_cell: Vector2i) -> void:
 		0
 	)
 
-func dynamically_available_cells(room_id: int = -1) -> Array[Vector2i]:
+func dynamically_available_cells(
+	room_id: int = -1,
+	main_floor_priority: bool = true,
+	ignore_pawns: bool = false,
+	ignore_fires: bool = true
+) -> Array[Vector2i]:
 	var exclude_cells: Dictionary = {}
-	for pawn in pawns.values():
-		for cell: Vector2i in pawn["cells"]:
-			exclude_cells[cell] = true
+	if not ignore_pawns:
+		for pawn in pawns.values():
+			for cell: Vector2i in pawn["cells"]:
+				exclude_cells[cell] = true
+	if not ignore_fires:
+		for fire_cell in fires.keys():
+			exclude_cells[fire_cell] = true
+	
 	var available_cells: Array[Vector2i] = []
-	var id = 0
+	var id = -1
 	for room: Dictionary in rooms:
 		if room_id >= 0:
+			id += 1
 			if id != room_id:
-				id += 1
 				continue
+		
 		var floor_main = room["floor_main"]
-		if floor_main != null and not exclude_cells.has(floor_main):
+		if main_floor_priority and floor_main != null and not exclude_cells.has(floor_main):
 			available_cells.append(floor_main)
 		for cell: Vector2i in room["floor_cells"]:
-			if cell == floor_main:
+			if main_floor_priority and cell == floor_main:
 				continue
 			if exclude_cells.has(cell):
 				continue
 			available_cells.append(cell)
+	
 	return available_cells
