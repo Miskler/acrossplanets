@@ -27,7 +27,7 @@ var fires: Dictionary = {}
 
 # Главная переменная самовосстановления кислорода.
 # Можно менять динамически прямо во время игры.
-@export var oxygen_air_production_per_second: float = 2.0
+@export var oxygen_air_production_per_second: float = 200.0
 
 # Скорость выравнивания кислорода через открытую дверь.
 @export var oxygen_door_flow_per_second: float = 0.65
@@ -347,11 +347,21 @@ func process_oxygen(delta: float) -> void:
 		oxygen_exterior_loss_per_second
 	)
 	
+	_process_fire_oxygen_starvation()
+	
 	OxygenLogic.update_room_oxygen_polygons(
 		oxygen_room_polygons,
 		oxygen_by_room,
 		oxygen_visual_max_alpha
 	)
+
+func _process_fire_oxygen_starvation() -> void:
+	for fire_data: Dictionary in fires.values():
+		var fire: Node2D = fire_data["node"]
+		var room_index: int = int(fire.get_meta("room"))
+		
+		if int(oxygen_by_room[room_index]) <= 0:
+			fire.oxygen_starvation()
 
 func _recalculate_oxygen_consumption() -> void:
 	oxygen_consumption = OxygenLogic.create_consumption_by_room(rooms)
@@ -405,11 +415,16 @@ func fire_to_room(room_id: int) -> bool:
 	if available_cells.is_empty():
 		return false
 	
+	if oxygen_by_room[room_id] < 30:
+		return false
+	
 	var fire = load("res://scenes/fire.tscn").instantiate()
 	fire.set_health(2)
 	fire.set_meta("room", room_id)
+	fire.set_meta("cell", available_cells[0])
 	fire.position = foundation_layer.map_to_local(available_cells[0])
 	fire.connect("fire_spreading", fire_spreading)
+	fire.connect("fire_out", fire_out)
 	fires[available_cells[0]] = {"node": fire}
 	fire_layer.add_child(fire)
 	
@@ -437,6 +452,9 @@ func fire_spreading(fire: Node2D) -> void:
 	for neighbor_room_index: int in neighbors:
 		if fire_to_room(neighbor_room_index):
 			return
+
+func fire_out(fire: Node2D) -> void:
+	fires.erase(fire.get_meta("cell"))
 
 func pawn_to_cell(pawn_id: String, target_cell: Vector2i) -> void:
 	var available_cells: Array[Vector2i] = dynamically_available_cells()

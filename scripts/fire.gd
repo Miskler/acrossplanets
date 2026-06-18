@@ -38,6 +38,10 @@ func extinguish_fire(yes: bool):
 		extinguishing_fire = yes
 		timer.start()
 
+func oxygen_starvation():
+	emit_signal("fire_out", self)
+	queue_free()
+
 
 func _on_timer_timeout() -> void:
 	if not extinguishing_fire:

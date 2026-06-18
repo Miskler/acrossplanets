@@ -45,6 +45,8 @@ static func add_pawn_consumption(
 	for pawn_data: Dictionary in pawns.values():
 		var pawn_node: Node2D = pawn_data["node"]
 		var cell: Vector2i = foundation_layer.local_to_map(pawn_node.position)
+		if not room_by_cell.has(cell):
+			continue
 		var room_index: int = int(room_by_cell[cell])
 		
 		consumption_by_room[room_index] = (
