@@ -10,9 +10,9 @@ size = Vector2(40, 40)
 script = ExtResource("1_ccfo0")
 
 [node name="Sprite" type="AnimatedSprite2D" parent="." unique_id=1882085587]
-scale = Vector2(0.61956525, 0.6195652)
+scale = Vector2(0.16, 0.16)
 sprite_frames = ExtResource("2_eqwak")
-animation = &"human_top_standing"
+animation = &"human_down_station"
 
 [node name="Clickup" type="CollisionShape2D" parent="." unique_id=1038787742]
 shape = SubResource("RectangleShape2D_ccfo0")

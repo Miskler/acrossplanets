@@ -4,11 +4,24 @@ signal fire_spreading(node: Node2D)
 signal fire_out(node: Node2D)
 
 @onready var timer = $Timer
+var wait_time: float = 0.5
 
+var time_scale: int = 1
 var health_level: int = 2
 var health_percent: float = 0.5
 var extinguishing_fire: bool = false
 var oxygen_consumption: float = 2.0
+
+func _ready() -> void:
+	timer.wait_time = wait_time / time_scale
+
+func set_time_scale(new_scale: int):
+	new_scale = clamp(new_scale, 1, 10)
+	if time_scale != new_scale:
+		print(new_scale)
+		time_scale = new_scale
+		timer.wait_time = wait_time / time_scale
+		timer.start()
 
 var inited: bool = false
 func set_health(new_health: int):

@@ -284,7 +284,7 @@ func door_selected(
 
 
 func room_selected(
-	area: Area2D,
+	_area: Area2D,
 	room: int
 ) -> void:
 	if selected_pawn_uuids.is_empty():

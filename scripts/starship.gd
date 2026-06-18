@@ -51,6 +51,15 @@ var oxygen_consumption: Dictionary = {}
 var oxygen_room_polygons: Dictionary = {}
 var oxygen_recheck_timer: float = 0.0
 
+@export var pawn_task_enabled: bool = true
+@export var pawn_task_recheck_interval: float = 0.25
+@export var hull_repair_seconds_per_step: float = 4.0
+
+var pawn_task_recheck_timer: float = 0.0
+
+var hull_holes: Dictionary = {}
+var hull_repair_progress: Dictionary = {}
+
 var fortress_doors_level: int = 0
 var fortress_doors_levels_map: Array = [0.7, 0.4, 0.2, 0.1]
 
@@ -61,11 +70,18 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if oxygen_enabled:
 		process_oxygen(delta)
+	
+	if pawn_task_enabled:
+		process_pawn_tasks(delta)
+		_process_station_workers(delta)
 
 func restart() -> void:
 	technical_layer.hide()
 	rooms = recalc_rooms()
 	setup_oxygen()
+	
+	hull_holes = HullRepairLogic.collect_hull_holes(foundation_layer)
+	hull_repair_progress = {}
 	
 	setup_icons()
 	
@@ -182,9 +198,18 @@ func _door_cells_key(door_cells: Array) -> String:
 	return "|".join(result)
 
 func _on_pawn_movement_finished(pawn_id: String) -> void:
-	var target_cell: Vector2i = pawns[pawn_id]["task"]["target_cell"]
-	
+	var movement_task: Dictionary = pawns[pawn_id]["task"]
+	var target_cell: Vector2i = movement_task["target_cell"]
+
 	pawns[pawn_id]["cells"] = [target_cell]
+
+	var after_move_task: Dictionary = movement_task.get("after_move_task", {})
+
+	if not after_move_task.is_empty():
+		pawns[pawn_id]["state"] = "working"
+		pawns[pawn_id]["task"] = after_move_task
+		return
+
 	pawns[pawn_id]["state"] = "idle"
 	pawns[pawn_id]["task"] = {}
 
@@ -397,6 +422,155 @@ func _ensure_oxygen_overlay_layer() -> void:
 	add_child(oxygen_overlay_layer)
 
 
+func process_pawn_tasks(delta: float) -> void:
+	_cleanup_finished_tasks()
+	_apply_fire_workers()
+	_process_hull_repair_workers(delta)
+
+	pawn_task_recheck_timer += delta
+
+	if pawn_task_recheck_timer < pawn_task_recheck_interval:
+		return
+
+	pawn_task_recheck_timer = 0.0
+	_assign_idle_pawn_tasks()
+
+func _process_station_workers(delta: float) -> void:
+	for pawn: Dictionary in pawns.values():
+		if pawn["state"] != "working":
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != PawnTaskLogic.TASK_STATION:
+			continue
+
+		var room_id: int = task["room_id"]
+		
+		print("Пешка занята станцией в комнате "+str(task["room_id"]))
+
+		# тут уже эффект станции:
+		# генерация энергии, управление пушками, лечение, производство и т.д.
+
+func _assign_idle_pawn_tasks() -> void:
+	var orders: Array[Dictionary] = PawnTaskLogic.create_task_orders(
+		foundation_layer,
+		rooms,
+		pawns,
+		fires,
+		hull_holes
+	)
+
+	for order: Dictionary in orders:
+		var pawn_id: String = order["pawn_id"]
+		var task: Dictionary = order["task"]
+
+		if not pawns.has(pawn_id):
+			continue
+
+		if pawns[pawn_id]["state"] != "idle":
+			continue
+
+		match task["type"]:
+			PawnTaskLogic.TASK_FIRE:
+				_start_pawn_work(pawn_id, task)
+
+			PawnTaskLogic.TASK_HULL_REPAIR:
+				_start_pawn_work(pawn_id, task)
+
+			PawnTaskLogic.TASK_STATION:
+				_start_station_task(pawn_id, task)
+
+
+func _start_pawn_work(pawn_id: String, task: Dictionary) -> void:
+	pawns[pawn_id]["state"] = "working"
+	pawns[pawn_id]["task"] = task
+
+
+func _start_station_task(pawn_id: String, task: Dictionary) -> void:
+	var pawn_cell: Vector2i = foundation_layer.local_to_map(
+		pawns[pawn_id]["node"].position
+	)
+
+	var target_cell: Vector2i = task["target_cell"]
+
+	if pawn_cell == target_cell:
+		_start_pawn_work(pawn_id, task)
+		return
+
+	pawn_to_cell(pawn_id, target_cell, task)
+
+
+func _cleanup_finished_tasks() -> void:
+	var invalid_worker_ids: Array[String] = PawnTaskLogic.get_invalid_worker_ids(
+		pawns,
+		fires,
+		hull_holes
+	)
+
+	for pawn_id: String in invalid_worker_ids:
+		pawns[pawn_id]["state"] = "idle"
+		pawns[pawn_id]["task"] = {}
+
+
+func _apply_fire_workers() -> void:
+	var workers_by_fire: Dictionary = PawnTaskLogic.count_workers_by_target(
+		pawns,
+		PawnTaskLogic.TASK_FIRE
+	)
+
+	for fire_cell: Vector2i in fires.keys():
+		var fire: Node = fires[fire_cell]["node"]
+		var workers: int = int(workers_by_fire.get(fire_cell, 0))
+
+		fire.extinguish_fire(workers > 0)
+		fire.set_time_scale(workers)
+
+
+func _process_hull_repair_workers(delta: float) -> void:
+	var workers_by_hole: Dictionary = PawnTaskLogic.count_workers_by_target(
+		pawns,
+		PawnTaskLogic.TASK_HULL_REPAIR
+	)
+
+	var finished_cells: Array[Vector2i] = HullRepairLogic.process_hull_repair(
+		foundation_layer,
+		hull_holes,
+		hull_repair_progress,
+		workers_by_hole,
+		delta,
+		hull_repair_seconds_per_step
+	)
+
+	for finished_cell: Vector2i in finished_cells:
+		_finish_workers_on_target(
+			PawnTaskLogic.TASK_HULL_REPAIR,
+			finished_cell
+		)
+
+
+func _finish_workers_on_target(
+	task_type: String,
+	target_cell: Vector2i
+) -> void:
+	for pawn_id: String in pawns.keys():
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] != "working":
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != task_type:
+			continue
+
+		if task["target_cell"] != target_cell:
+			continue
+
+		pawns[pawn_id]["state"] = "idle"
+		pawns[pawn_id]["task"] = {}
+
+
 func setup_icons():
 	for child in icons_layer.get_children():
 		child.queue_free()
@@ -456,34 +630,44 @@ func fire_spreading(fire: Node2D) -> void:
 func fire_out(fire: Node2D) -> void:
 	fires.erase(fire.get_meta("cell"))
 
-func pawn_to_cell(pawn_id: String, target_cell: Vector2i) -> void:
+func pawn_to_cell(
+	pawn_id: String,
+	target_cell: Vector2i,
+	after_move_task: Dictionary = {}
+) -> void:
 	var available_cells: Array[Vector2i] = dynamically_available_cells()
+
 	if not target_cell in available_cells:
-		push_warning("Target cell for moving not available: "+str(target_cell))
+		push_warning("Target cell for moving not available: " + str(target_cell))
 		return
-	
-	var source_cell: Vector2i = foundation_layer.local_to_map(pawns[pawn_id]["node"].position)
-	
-	pawns[pawn_id]["cells"] = [source_cell, target_cell]
+
+	var source_cell: Vector2i = foundation_layer.local_to_map(
+		pawns[pawn_id]["node"].position
+	)
+
+	pawns[pawn_id]["cells"] = [target_cell]
 	pawns[pawn_id]["state"] = "moving"
-	
+
 	var path_data: Dictionary = ShipPathfinder.calculate(
 		foundation_layer,
 		rooms,
 		source_cell,
 		target_cell
 	)
-	
+
 	if not path_data["valid"]:
 		push_warning("Path invalid: " + str(path_data["errors"]))
+		pawns[pawn_id]["cells"] = [source_cell]
+		pawns[pawn_id]["state"] = "idle"
 		return
-	
+
 	pawns[pawn_id]["task"] = {
 		"steps": path_data["steps"],
 		"next_step_index": 0,
-		"target_cell": target_cell
+		"target_cell": target_cell,
+		"after_move_task": after_move_task
 	}
-	
+
 	pawns[pawn_id]["node"].move_by_steps_until_action(
 		path_data["steps"],
 		0

@@ -181,6 +181,7 @@ texture_region_size = Vector2i(32, 32)
 4:4/0 = 0
 4:4/0/navigation_layer_2/polygon = SubResource("NavigationPolygon_ct03y")
 4:4/0/custom_data_0 = "floor"
+4:4/0/custom_data_1 = "floor"
 5:4/0 = 0
 5:4/0/navigation_layer_0/polygon = SubResource("NavigationPolygon_eo3ei")
 5:4/0/custom_data_0 = "wall"
