@@ -106,6 +106,7 @@ func add_pawn(race: String) -> bool:
 	pawn.set_race(race)
 	pawn.position = foundation_layer.map_to_local(available_cells[0])
 	pawns_layer.add_child(pawn)
+	pawn.set_animation("down", "standing")
 	var uuid = NodeUUID.uuid_v4()
 	pawn.set_meta("uuid", uuid)
 	
@@ -187,6 +188,68 @@ func _on_pawn_action_required(
 		next_step_index
 	)
 
+func _set_pawn_task_animation(pawn_id: String) -> void:
+	var pawn: Node2D = pawns[pawn_id]["node"]
+	var task: Dictionary = pawns[pawn_id]["task"]
+	var task_type: String = task.get("type", "")
+
+	var look_vector: Vector2 = _get_pawn_task_look_vector(pawn_id, task)
+
+	pawn.update_direction_by_vector(look_vector)
+
+	match task_type:
+		PawnTaskLogic.TASK_FIRE:
+			pawn.set_animation(pawn.direction, "extinguishing")
+
+		PawnTaskLogic.TASK_HULL_REPAIR:
+			pawn.set_animation(pawn.direction, "repair")
+
+		PawnTaskLogic.TASK_STATION:
+			pawn.set_animation(pawn.direction, "station")
+
+
+func _get_pawn_task_look_vector(
+	pawn_id: String,
+	task: Dictionary
+) -> Vector2:
+	var pawn_cell: Vector2i = foundation_layer.local_to_map(
+		pawns[pawn_id]["node"].position
+	)
+
+	var task_type: String = task.get("type", "")
+
+	match task_type:
+		PawnTaskLogic.TASK_FIRE:
+			return _get_vector_to_task_target(pawn_cell, task)
+
+		PawnTaskLogic.TASK_HULL_REPAIR:
+			return _get_vector_to_task_target(pawn_cell, task)
+
+		PawnTaskLogic.TASK_STATION:
+			var room_id: int = int(task["room_id"])
+			var station_cell: Vector2i = rooms[room_id]["station_cell"]
+			var cell_delta: Vector2i = station_cell - pawn_cell
+
+			if cell_delta == Vector2i.ZERO:
+				return Vector2.UP
+
+			return Vector2(cell_delta).normalized()
+
+	return Vector2.DOWN
+
+
+func _get_vector_to_task_target(
+	pawn_cell: Vector2i,
+	task: Dictionary
+) -> Vector2:
+	var target_cell: Vector2i = task["target_cell"]
+	var cell_delta: Vector2i = target_cell - pawn_cell
+
+	if cell_delta == Vector2i.ZERO:
+		return Vector2.UP
+
+	return Vector2(cell_delta).normalized()
+
 func _door_cells_key(door_cells: Array) -> String:
 	var result: PackedStringArray = []
 
@@ -208,6 +271,8 @@ func _on_pawn_movement_finished(pawn_id: String) -> void:
 	if not after_move_task.is_empty():
 		pawns[pawn_id]["state"] = "working"
 		pawns[pawn_id]["task"] = after_move_task
+
+		_set_pawn_task_animation(pawn_id)
 		return
 
 	pawns[pawn_id]["state"] = "idle"
@@ -485,6 +550,8 @@ func _assign_idle_pawn_tasks() -> void:
 func _start_pawn_work(pawn_id: String, task: Dictionary) -> void:
 	pawns[pawn_id]["state"] = "working"
 	pawns[pawn_id]["task"] = task
+
+	_set_pawn_task_animation(pawn_id)
 
 
 func _start_station_task(pawn_id: String, task: Dictionary) -> void:

@@ -79,7 +79,7 @@ func move_by_steps_until_action(steps: Array, start_index: int = 0) -> void:
 			var duration: float = distance / move_speed_px
 			
 			movement_tween.tween_callback(
-				Callable(self, "_update_direction_by_vector").bind(move_vector)
+				Callable(self, "update_direction_by_vector").bind(move_vector)
 			)
 			
 			movement_tween.tween_property(
@@ -135,7 +135,7 @@ func _on_movement_tween_finished() -> void:
 	set_animation(direction, "standing")
 	movement_finished.emit()
 
-func _update_direction_by_vector(move_vector: Vector2) -> void:
+func update_direction_by_vector(move_vector: Vector2) -> void:
 	if move_vector.length() <= 0.001:
 		return
 
@@ -147,7 +147,7 @@ func _update_direction_by_vector(move_vector: Vector2) -> void:
 		else:
 			sprite_layer.flip_h = false
 
-		set_animation(direction, "moving")
+		set_animation(direction, animation)
 		return
 
 	sprite_layer.flip_h = false
