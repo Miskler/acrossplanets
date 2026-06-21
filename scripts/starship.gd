@@ -495,7 +495,7 @@ func process_pawn_tasks(delta: float) -> void:
 	if pawn_battle_enabled:
 		_process_battle_tasks(delta)
 
-	_interrupt_station_workers_for_fire()
+	var had_interrupted_workers: bool = _interrupt_station_workers_for_room_tasks()
 	_cleanup_finished_tasks()
 	_apply_fire_workers()
 	_process_hull_repair_workers(delta)
@@ -1374,7 +1374,9 @@ func _update_battle_visual_offsets() -> void:
 
 		_reset_pawn_visual_position(pawn_id)
 
-func _interrupt_station_workers_for_fire() -> void:
+func _interrupt_station_workers_for_room_tasks() -> bool:
+	var interrupted: bool = false
+
 	for pawn_id: String in pawns.keys():
 		var pawn: Dictionary = pawns[pawn_id]
 
@@ -1388,16 +1390,28 @@ func _interrupt_station_workers_for_fire() -> void:
 
 		var room_id: int = int(task["room_id"])
 
-		if not _room_has_fire(room_id):
+		if not (_room_has_fire(room_id) or _room_has_hull_hole(room_id)):
 			continue
 
 		_set_pawn_idle(pawn_id)
+		interrupted = true
+
+	return interrupted
 
 func _room_has_fire(room_id: int) -> bool:
 	for fire_data: Dictionary in fires.values():
 		var fire: Node2D = fire_data["node"]
 
 		if int(fire.get_meta("room")) == room_id:
+			return true
+
+	return false
+
+func _room_has_hull_hole(room_id: int) -> bool:
+	var room: Dictionary = rooms[room_id]
+
+	for hole_cell: Vector2i in hull_holes.keys():
+		if hole_cell in room["floor_cells"]:
 			return true
 
 	return false
