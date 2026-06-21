@@ -110,6 +110,14 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
+"texture": SubResource("AtlasTexture_ufjm2")
+}],
+"loop": true,
+"name": &"down_battle_remotely",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
 "texture": SubResource("AtlasTexture_iipli")
 }],
 "loop": true,
@@ -167,6 +175,14 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
+"texture": SubResource("AtlasTexture_eodwv")
+}],
+"loop": true,
+"name": &"side_battle_remotely",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
 "texture": SubResource("AtlasTexture_202cf")
 }],
 "loop": true,
@@ -220,6 +236,14 @@ animations = [{
 }],
 "loop": true,
 "name": &"top_battle",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_3ypm8")
+}],
+"loop": true,
+"name": &"top_battle_remotely",
 "speed": 5.0
 }, {
 "frames": [{

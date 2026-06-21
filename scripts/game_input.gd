@@ -311,7 +311,9 @@ func select_pawns_in_rect(global_rect: Rect2) -> void:
 func clear_pawn_selection() -> void:
 	for uuid_variant: Variant in selected_pawn_uuids.keys():
 		var uuid: String = str(uuid_variant)
-		get_parent().pawns[uuid]["node"].set_selected(false)
+		var pawn = get_parent().pawns.get(uuid)
+		if pawn != null:
+			pawn["node"].set_selected(false)
 	
 	selected_pawn_uuids.clear()
 
@@ -344,9 +346,20 @@ func room_selected(
 		
 		var uuid: String = str(uuid_variant)
 		
+		var selected_cell: Vector2i = available_cells[cell_index]
+		var target_cell: Vector2i = get_parent().get_player_room_target_cell(
+			uuid,
+			selected_cell
+		)
+
+		var ignore_pawns_on_target: bool = target_cell != selected_cell
+
 		get_parent().pawn_to_cell(
 			uuid,
-			available_cells[cell_index]
+			target_cell,
+			{},
+			ignore_pawns_on_target,
+			PawnTaskLogic.TASK_LOCK_PLAYER
 		)
 		
 		cell_index += 1
@@ -400,7 +413,10 @@ func _get_selected_pawn_room_ids() -> Dictionary:
 	
 	for uuid_variant: Variant in selected_pawn_uuids.keys():
 		var uuid: String = str(uuid_variant)
-		var pawn: Node2D = get_parent().pawns[uuid]["node"]
+		var pawn_obj = get_parent().pawns.get(uuid)
+		if pawn_obj == null:
+			continue
+		var pawn: Node2D = pawn_obj["node"]
 		
 		var cell: Vector2i = tile_layer.local_to_map(tile_layer.to_local(pawn.global_position))
 		var room_id: int = get_parent().cell_to_room(cell)

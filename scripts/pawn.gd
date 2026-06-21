@@ -21,6 +21,7 @@ var fire_room_damage_factor: float = 1
 var battle_damage_factor: float = 1
 
 var impact_force: int = 3
+var impact_force_remotely: int = 3
 var move_speed_px: float = 80.0
 var oxygen_consumption: float = 2.0
 var point_reach_distance_px: float = 1.0
@@ -74,6 +75,7 @@ func set_race(new_race: String):
 			move_speed_px = 80
 			oxygen_consumption = 20
 			impact_force = 3
+			impact_force_remotely = 2
 			
 			max_health = 100
 			min_oxygen = 1

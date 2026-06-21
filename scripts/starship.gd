@@ -6,7 +6,7 @@ signal restart_finish()
 signal add_pawn_event(node, uuid)
 signal delete_pawn_event(node, uuid)
 
-@export var pawns2spawn: Array[Dictionary] = [{"race": "human"}, {"race": "human"}]
+@export var pawns2spawn: Array[Dictionary] = [{"race": "human"}, {"race": "human"}, {"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
 
 @onready var foundation_layer = $Foundation
 @onready var stations_layer = $Stations
@@ -17,6 +17,8 @@ signal delete_pawn_event(node, uuid)
 const SAMPLES_PER_TILE: int = 1
 
 var time2change_door_state = 0.2
+
+var starship_uuid: String = ""
 
 var rooms: Array[Dictionary] = []
 var pawns: Dictionary = {}
@@ -71,6 +73,13 @@ var hull_repair_progress: Dictionary = {}
 var fortress_doors_level: int = 0
 var fortress_doors_levels_map: Array = [0.7, 0.4, 0.2, 0.1]
 
+@export var pawn_battle_enabled: bool = true
+@export var pawn_battle_recheck_interval: float = 0.15
+@export var pawn_battle_damage_interval: float = 1.0
+
+var pawn_battle_recheck_timer: float = 0.0
+var pawn_battle_attack_timers: Dictionary = {}
+
 
 func _ready() -> void:
 	restart()
@@ -87,6 +96,7 @@ func _process(delta: float) -> void:
 		_process_station_workers(delta)
 
 func restart() -> void:
+	starship_uuid = NodeUUID.uuid_v4()
 	technical_layer.hide()
 	rooms = recalc_rooms()
 	setup_oxygen()
@@ -101,11 +111,11 @@ func restart() -> void:
 		pawn.queue_free()
 	pawns = {}
 	for pawn in pawns2spawn:
-		add_pawn(pawn["race"])
+		add_pawn(pawn["race"], pawn.get("starship", starship_uuid))
 	
 	emit_signal("restart_finish")
 
-func add_pawn(race: String) -> bool:
+func add_pawn(race: String, starship: String = starship_uuid) -> bool:
 	var available_cells: Array[Vector2i] = dynamically_available_cells()
 	
 	if available_cells.size() < 1:
@@ -114,6 +124,7 @@ func add_pawn(race: String) -> bool:
 	var pawn = load("res://scenes/pawn.tscn").instantiate()
 	pawn.position = foundation_layer.map_to_local(available_cells[0])
 	pawns_layer.add_child(pawn)
+	pawn.starship = starship
 	pawn.set_race(race)
 	pawn.set_animation("down", "standing")
 	var uuid = NodeUUID.uuid_v4()
@@ -121,6 +132,7 @@ func add_pawn(race: String) -> bool:
 	
 	pawn.connect("movement_action_required", _on_pawn_action_required.bind(uuid))
 	pawn.connect("movement_finished", _on_pawn_movement_finished.bind(uuid))
+	pawn.connect("dead", _on_pawn_dead.bind(uuid))
 	
 	pawns[uuid] = {
 		"node": pawn,
@@ -207,12 +219,15 @@ func _set_pawn_task_animation(pawn_id: String) -> void:
 	pawn.update_direction_by_vector(look_vector)
 
 	match task_type:
+		PawnTaskLogic.TASK_BATTLE:
+			pawn.set_animation(
+				pawn.direction,
+				_get_battle_animation_name(pawn_id, task)
+			)
 		PawnTaskLogic.TASK_FIRE:
 			pawn.set_animation(pawn.direction, "extinguishing")
-
 		PawnTaskLogic.TASK_HULL_REPAIR:
 			pawn.set_animation(pawn.direction, "repair")
-
 		PawnTaskLogic.TASK_STATION:
 			pawn.set_animation(pawn.direction, "station")
 
@@ -228,17 +243,17 @@ func _get_pawn_task_look_vector(
 	var task_type: String = task.get("type", "")
 
 	match task_type:
+		PawnTaskLogic.TASK_BATTLE:
+			return _get_vector_to_battle_target(pawn_id, task)
 		PawnTaskLogic.TASK_FIRE:
 			return _get_vector_to_task_target(pawn_cell, task)
-
 		PawnTaskLogic.TASK_HULL_REPAIR:
 			return _get_vector_to_task_target(pawn_cell, task)
-
 		PawnTaskLogic.TASK_STATION:
 			var room_id: int = int(task["room_id"])
 			var station_cell: Vector2i = rooms[room_id]["station_cell"]
 			var cell_delta: Vector2i = station_cell - pawn_cell
-
+			
 			if cell_delta == Vector2i.ZERO:
 				return Vector2.UP
 
@@ -278,13 +293,19 @@ func _on_pawn_movement_finished(pawn_id: String) -> void:
 	var after_move_task: Dictionary = movement_task.get("after_move_task", {})
 
 	if not after_move_task.is_empty():
-		pawns[pawn_id]["state"] = "working"
+		if not after_move_task.has("lock"):
+			after_move_task["lock"] = movement_task.get(
+				"lock",
+				PawnTaskLogic.TASK_LOCK_AUTO
+			)
+
+		pawns[pawn_id]["state"] = PawnTaskLogic.STATE_WORKING
 		pawns[pawn_id]["task"] = after_move_task
 
 		_set_pawn_task_animation(pawn_id)
 		return
 
-	pawns[pawn_id]["state"] = "idle"
+	pawns[pawn_id]["state"] = PawnTaskLogic.STATE_IDLE
 	pawns[pawn_id]["task"] = {}
 
 func recalc_rooms() -> Array[Dictionary]:
@@ -467,6 +488,9 @@ func _ensure_oxygen_overlay_layer() -> void:
 
 
 func process_pawn_tasks(delta: float) -> void:
+	if pawn_battle_enabled:
+		_process_battle_tasks(delta)
+
 	_cleanup_finished_tasks()
 	_apply_fire_workers()
 	_process_hull_repair_workers(delta)
@@ -555,8 +579,7 @@ func _cleanup_finished_tasks() -> void:
 	)
 
 	for pawn_id: String in invalid_worker_ids:
-		pawns[pawn_id]["state"] = "idle"
-		pawns[pawn_id]["task"] = {}
+		_set_pawn_idle(pawn_id)
 
 
 func _apply_fire_workers() -> void:
@@ -613,8 +636,7 @@ func _finish_workers_on_target(
 		if task["target_cell"] != target_cell:
 			continue
 		
-		pawns[pawn_id]["state"] = "idle"
-		pawns[pawn_id]["task"] = {}
+		_set_pawn_idle(pawn_id)
 
 func fire_to_room(room_id: int) -> bool:
 	var available_cells = dynamically_available_cells(room_id, false, true, false)
@@ -665,9 +687,15 @@ func fire_out(fire: Node2D) -> void:
 func pawn_to_cell(
 	pawn_id: String,
 	target_cell: Vector2i,
-	after_move_task: Dictionary = {}
+	after_move_task: Dictionary = {},
+	ignore_pawns_on_target: bool = false,
+	task_lock: String = PawnTaskLogic.TASK_LOCK_AUTO
 ) -> void:
-	var available_cells: Array[Vector2i] = dynamically_available_cells()
+	var available_cells: Array[Vector2i] = dynamically_available_cells(
+		-1,
+		true,
+		ignore_pawns_on_target
+	)
 
 	if not target_cell in available_cells:
 		push_warning("Target cell for moving not available: " + str(target_cell))
@@ -678,7 +706,7 @@ func pawn_to_cell(
 	)
 
 	pawns[pawn_id]["cells"] = [target_cell]
-	pawns[pawn_id]["state"] = "moving"
+	pawns[pawn_id]["state"] = PawnTaskLogic.STATE_MOVING
 
 	var path_data: Dictionary = ShipPathfinder.calculate(
 		foundation_layer,
@@ -690,20 +718,34 @@ func pawn_to_cell(
 	if not path_data["valid"]:
 		push_warning("Path invalid: " + str(path_data["errors"]))
 		pawns[pawn_id]["cells"] = [source_cell]
-		pawns[pawn_id]["state"] = "idle"
+		pawns[pawn_id]["state"] = PawnTaskLogic.STATE_IDLE
 		return
 
 	pawns[pawn_id]["task"] = {
 		"steps": path_data["steps"],
 		"next_step_index": 0,
 		"target_cell": target_cell,
-		"after_move_task": after_move_task
+		"after_move_task": after_move_task,
+		"lock": task_lock
 	}
 
 	pawns[pawn_id]["node"].move_by_steps_until_action(
 		path_data["steps"],
 		0
 	)
+
+func _set_pawn_idle(pawn_id: String) -> void:
+	if not pawns.has(pawn_id):
+		return
+
+	pawns[pawn_id]["state"] = PawnTaskLogic.STATE_IDLE
+	pawns[pawn_id]["task"] = {}
+
+	if pawn_battle_attack_timers.has(pawn_id):
+		pawn_battle_attack_timers.erase(pawn_id)
+
+	var pawn: Node2D = pawns[pawn_id]["node"]
+	pawn.set_animation(pawn.direction, "standing")
 
 func cell_to_room(cell: Vector2i) -> int:
 	for room: Dictionary in rooms:
@@ -746,3 +788,454 @@ func dynamically_available_cells(
 			available_cells.append(cell)
 	
 	return available_cells
+
+func _get_battle_animation_name(
+	pawn_id: String,
+	task: Dictionary
+) -> String:
+	var target_pawn_id: String = task.get("target_pawn_id", "")
+
+	if target_pawn_id == "":
+		return "battle_remotely"
+
+	if not pawns.has(target_pawn_id):
+		return "battle_remotely"
+
+	if _battle_is_melee(pawn_id, target_pawn_id):
+		return "battle"
+
+	return "battle_remotely"
+
+
+func _get_vector_to_battle_target(
+	pawn_id: String,
+	task: Dictionary
+) -> Vector2:
+	var target_pawn_id: String = task.get("target_pawn_id", "")
+
+	if not pawns.has(target_pawn_id):
+		return Vector2.DOWN
+
+	var pawn_cell: Vector2i = pawns[pawn_id]["cells"][0]
+	var target_cell: Vector2i = pawns[target_pawn_id]["cells"][0]
+
+	var cell_delta: Vector2i = target_cell - pawn_cell
+
+	if cell_delta == Vector2i.ZERO:
+		return Vector2.DOWN
+
+	return Vector2(cell_delta).normalized()
+
+func _process_battle_tasks(delta: float) -> void:
+	pawn_battle_recheck_timer += delta
+
+	if pawn_battle_recheck_timer >= pawn_battle_recheck_interval:
+		pawn_battle_recheck_timer = 0.0
+		_refresh_battle_tasks()
+
+	_apply_battle_damage(delta)
+
+func get_player_room_target_cell(
+	pawn_id: String,
+	selected_cell: Vector2i
+) -> Vector2i:
+	var room_id: int = cell_to_room(selected_cell)
+
+	if room_id < 0:
+		return selected_cell
+
+	var pawn_node: Node2D = pawns[pawn_id]["node"]
+
+	var melee_damage: int = int(pawn_node.impact_force)
+	var remote_damage: int = int(pawn_node.impact_force_remotely)
+
+	if melee_damage <= remote_damage:
+		return selected_cell
+
+	var target_pawn_id: String = PawnTaskLogic.get_nearest_enemy_pawn_id_in_room(
+		rooms,
+		pawns,
+		pawn_id,
+		room_id
+	)
+
+	if target_pawn_id == "":
+		return selected_cell
+
+	if pawns[target_pawn_id]["state"] == PawnTaskLogic.STATE_MOVING:
+		return selected_cell
+
+	var target_cell: Vector2i = pawns[target_pawn_id]["cells"][0]
+
+	if _friendly_pawn_already_approaches_battle_target(
+		pawn_id,
+		target_pawn_id,
+		target_cell
+	):
+		return selected_cell
+
+	return target_cell
+
+func _refresh_battle_tasks() -> void:
+	var orders: Array[Dictionary] = PawnTaskLogic.create_battle_task_orders(
+		rooms,
+		pawns
+	)
+
+	var battle_pawn_ids: Dictionary = {}
+
+	for order: Dictionary in orders:
+		var pawn_id: String = order["pawn_id"]
+		var task: Dictionary = order["task"]
+
+		battle_pawn_ids[pawn_id] = true
+
+		if not pawns.has(pawn_id):
+			continue
+
+		_start_or_update_battle_task(pawn_id, task)
+
+	for pawn_id: String in pawns.keys():
+		if battle_pawn_ids.has(pawn_id):
+			continue
+
+		_stop_battle_if_needed(pawn_id)
+
+func _start_or_update_battle_task(
+	pawn_id: String,
+	task: Dictionary
+) -> void:
+	if _pawn_has_player_lock(pawn_id):
+		return
+
+	if _is_moving_to_battle(pawn_id):
+		return
+
+	var target_pawn_id: String = task["target_pawn_id"]
+
+	var pawn_cell: Vector2i = pawns[pawn_id]["cells"][0]
+	var target_cell: Vector2i = pawns[target_pawn_id]["cells"][0]
+
+	task["target_cell"] = target_cell
+	task["lock"] = PawnTaskLogic.TASK_LOCK_AUTO
+
+	if pawn_cell == target_cell:
+		_set_battle_working(pawn_id, task)
+		return
+
+	var approacher_id: String = _get_battle_pair_approacher(
+		pawn_id,
+		target_pawn_id
+	)
+
+	if approacher_id == pawn_id:
+		if not _friendly_pawn_already_approaches_battle_target(
+			pawn_id,
+			target_pawn_id,
+			target_cell
+		):
+			pawn_battle_attack_timers.erase(pawn_id)
+
+			pawn_to_cell(
+				pawn_id,
+				target_cell,
+				task,
+				true,
+				PawnTaskLogic.TASK_LOCK_AUTO
+			)
+
+			return
+
+	_set_battle_working(pawn_id, task)
+
+func _set_battle_working(
+	pawn_id: String,
+	task: Dictionary
+) -> void:
+	var current_task: Dictionary = pawns[pawn_id]["task"]
+
+	if current_task.get("type", "") != PawnTaskLogic.TASK_BATTLE:
+		pawn_battle_attack_timers.erase(pawn_id)
+	elif current_task.get("target_pawn_id", "") != task["target_pawn_id"]:
+		pawn_battle_attack_timers.erase(pawn_id)
+
+	task["lock"] = PawnTaskLogic.TASK_LOCK_AUTO
+
+	pawns[pawn_id]["state"] = PawnTaskLogic.STATE_WORKING
+	pawns[pawn_id]["task"] = task
+
+	_set_pawn_task_animation(pawn_id)
+
+
+func _is_already_moving_to_battle_cell(
+	pawn_id: String,
+	target_pawn_id: String,
+	target_cell: Vector2i
+) -> bool:
+	if pawns[pawn_id]["state"] != PawnTaskLogic.STATE_MOVING:
+		return false
+
+	var task: Dictionary = pawns[pawn_id]["task"]
+	var after_move_task: Dictionary = task.get("after_move_task", {})
+
+	if after_move_task.get("type", "") != PawnTaskLogic.TASK_BATTLE:
+		return false
+
+	if after_move_task.get("target_pawn_id", "") != target_pawn_id:
+		return false
+
+	return task.get("target_cell", Vector2i.ZERO) == target_cell
+
+func _cell_has_friendly_pawn(
+	cell: Vector2i,
+	pawn_id: String
+) -> bool:
+	var pawn_starship: String = pawns[pawn_id]["node"].get_current_starship()
+
+	for other_id: String in pawns.keys():
+		if other_id == pawn_id:
+			continue
+
+		if not pawns[other_id]["node"].control_is_available(pawn_starship):
+			continue
+
+		for other_cell: Vector2i in pawns[other_id]["cells"]:
+			if other_cell == cell:
+				return true
+
+	return false
+
+func _apply_battle_damage(delta: float) -> void:
+	var pawn_ids: Array = pawns.keys()
+
+	for pawn_id: String in pawn_ids:
+		if not pawns.has(pawn_id):
+			continue
+
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != PawnTaskLogic.TASK_BATTLE:
+			continue
+
+		var target_pawn_id: String = task.get("target_pawn_id", "")
+
+		if not _battle_target_is_valid(pawn_id, target_pawn_id):
+			pawns[pawn_id]["state"] = PawnTaskLogic.STATE_IDLE
+			pawns[pawn_id]["task"] = {}
+			pawn_battle_attack_timers.erase(pawn_id)
+			continue
+
+		var timer: float = float(pawn_battle_attack_timers.get(pawn_id, 0.0))
+		timer += delta
+
+		if timer < pawn_battle_damage_interval:
+			pawn_battle_attack_timers[pawn_id] = timer
+			continue
+
+		var hits: int = int(timer / pawn_battle_damage_interval)
+		timer -= float(hits) * pawn_battle_damage_interval
+		pawn_battle_attack_timers[pawn_id] = timer
+
+		_set_pawn_task_animation(pawn_id)
+
+		for i in range(hits):
+			if not pawns.has(target_pawn_id):
+				break
+
+			var attacker: Node2D = pawns[pawn_id]["node"]
+			var target: Node2D = pawns[target_pawn_id]["node"]
+
+			var base_damage: int = _get_battle_damage_value(
+				pawn_id,
+				target_pawn_id
+			)
+
+			if base_damage <= 0:
+				continue
+
+			var damage_value: float = float(base_damage) * target.battle_damage_factor
+			var final_damage: int = roundi(damage_value)
+
+			if final_damage > 0:
+				target.damage(final_damage)
+
+
+func _get_battle_damage_value(
+	pawn_id: String,
+	target_pawn_id: String
+) -> int:
+	if _battle_is_melee(pawn_id, target_pawn_id):
+		return int(pawns[pawn_id]["node"].impact_force)
+
+	return int(pawns[pawn_id]["node"].impact_force_remotely)
+
+
+func _battle_is_melee(
+	pawn_id: String,
+	target_pawn_id: String
+) -> bool:
+	return pawns[pawn_id]["cells"][0] == pawns[target_pawn_id]["cells"][0]
+
+func _battle_target_is_valid(
+	pawn_id: String,
+	target_pawn_id: String
+) -> bool:
+	if target_pawn_id == "":
+		return false
+
+	if not pawns.has(target_pawn_id):
+		return false
+	
+	if pawns[target_pawn_id]["state"] == PawnTaskLogic.STATE_MOVING:
+		return false
+
+	if not PawnTaskLogic.pawns_are_enemies(pawns, pawn_id, target_pawn_id):
+		return false
+
+	var pawn_room_id: int = cell_to_room(pawns[pawn_id]["cells"][0])
+	var target_room_id: int = cell_to_room(pawns[target_pawn_id]["cells"][0])
+
+	if pawn_room_id < 0:
+		return false
+
+	return pawn_room_id == target_room_id
+
+func _stop_battle_if_needed(pawn_id: String) -> void:
+	if not pawns.has(pawn_id):
+		return
+
+	if _pawn_has_player_lock(pawn_id):
+		return
+
+	var task: Dictionary = pawns[pawn_id]["task"]
+
+	if task.get("type", "") != PawnTaskLogic.TASK_BATTLE:
+		return
+
+	pawns[pawn_id]["state"] = PawnTaskLogic.STATE_IDLE
+	pawns[pawn_id]["task"] = {}
+	pawn_battle_attack_timers.erase(pawn_id)
+
+	pawns[pawn_id]["node"].set_animation(
+		pawns[pawn_id]["node"].direction,
+		"standing"
+	)
+
+func _on_pawn_dead(pawn_id: String) -> void:
+	if not pawns.has(pawn_id):
+		return
+
+	var pawn_node: Node2D = pawns[pawn_id]["node"]
+
+	for other_id: String in pawns.keys():
+		if other_id == pawn_id:
+			continue
+
+		var task: Dictionary = pawns[other_id]["task"]
+
+		if task.get("type", "") != PawnTaskLogic.TASK_BATTLE:
+			continue
+
+		if task.get("target_pawn_id", "") != pawn_id:
+			continue
+
+		pawns[other_id]["state"] = PawnTaskLogic.STATE_IDLE
+		pawns[other_id]["task"] = {}
+		pawn_battle_attack_timers.erase(other_id)
+
+	pawn_battle_attack_timers.erase(pawn_id)
+
+	emit_signal("delete_pawn_event", pawn_node, pawn_id)
+
+	pawns.erase(pawn_id)
+	pawn_node.queue_free()
+
+func _pawn_has_player_lock(pawn_id: String) -> bool:
+	if not pawns.has(pawn_id):
+		return false
+
+	var task: Dictionary = pawns[pawn_id]["task"]
+
+	return task.get("lock", PawnTaskLogic.TASK_LOCK_AUTO) == PawnTaskLogic.TASK_LOCK_PLAYER
+
+func _get_battle_pair_approacher(
+	pawn_id: String,
+	target_pawn_id: String
+) -> String:
+	var pawn_node: Node2D = pawns[pawn_id]["node"]
+	var target_node: Node2D = pawns[target_pawn_id]["node"]
+
+	var pawn_melee_gain: int = int(pawn_node.impact_force) - int(pawn_node.impact_force_remotely)
+	var target_melee_gain: int = int(target_node.impact_force) - int(target_node.impact_force_remotely)
+
+	if pawn_melee_gain <= 0 and target_melee_gain <= 0:
+		return ""
+
+	if pawn_melee_gain > target_melee_gain:
+		return pawn_id
+
+	if target_melee_gain > pawn_melee_gain:
+		return target_pawn_id
+
+	var ids: Array[String] = [pawn_id, target_pawn_id]
+	ids.sort()
+
+	return ids[0]
+
+func _is_moving_to_battle(pawn_id: String) -> bool:
+	if pawns[pawn_id]["state"] != PawnTaskLogic.STATE_MOVING:
+		return false
+
+	var task: Dictionary = pawns[pawn_id]["task"]
+	var after_move_task: Dictionary = task.get("after_move_task", {})
+
+	return after_move_task.get("type", "") == PawnTaskLogic.TASK_BATTLE
+
+func _friendly_pawn_already_approaches_battle_target(
+	pawn_id: String,
+	target_pawn_id: String,
+	target_cell: Vector2i
+) -> bool:
+	var pawn_starship: String = pawns[pawn_id]["node"].get_current_starship()
+
+	for other_id: String in pawns.keys():
+		if other_id == pawn_id:
+			continue
+
+		if not pawns[other_id]["node"].control_is_available(pawn_starship):
+			continue
+
+		var other: Dictionary = pawns[other_id]
+		var other_task: Dictionary = other["task"]
+
+		for other_cell: Vector2i in other["cells"]:
+			if other_cell == target_cell:
+				return true
+
+		if other["state"] == PawnTaskLogic.STATE_MOVING:
+			var after_move_task: Dictionary = other_task.get("after_move_task", {})
+
+			if after_move_task.get("type", "") != PawnTaskLogic.TASK_BATTLE:
+				continue
+
+			if after_move_task.get("target_pawn_id", "") == target_pawn_id:
+				return true
+
+		if other["state"] == PawnTaskLogic.STATE_WORKING:
+			if other_task.get("type", "") != PawnTaskLogic.TASK_BATTLE:
+				continue
+
+			if other_task.get("target_pawn_id", "") == target_pawn_id:
+				var other_cell: Vector2i = foundation_layer.local_to_map(
+					other["node"].position
+				)
+
+				if other_cell == target_cell:
+					return true
+
+	return false

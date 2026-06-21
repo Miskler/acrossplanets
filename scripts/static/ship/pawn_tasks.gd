@@ -4,6 +4,10 @@ class_name PawnTaskLogic
 const TASK_FIRE: String = "fire"
 const TASK_HULL_REPAIR: String = "hull_repair"
 const TASK_STATION: String = "station"
+const TASK_BATTLE: String = "battle"
+
+const TASK_LOCK_AUTO: String = "auto"
+const TASK_LOCK_PLAYER: String = "player"
 
 const STATE_IDLE: String = "idle"
 const STATE_MOVING: String = "moving"
@@ -252,3 +256,91 @@ static func is_cell_reserved_by_other_pawn(
 				return true
 
 	return false
+
+static func create_battle_task_orders(
+	rooms: Array[Dictionary],
+	pawns: Dictionary
+) -> Array[Dictionary]:
+	var orders: Array[Dictionary] = []
+
+	for pawn_id: String in pawns.keys():
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] == STATE_MOVING:
+			continue
+		
+		var pawn_cell: Vector2i = pawns[pawn_id]["cells"][0]
+
+		var room_id: int = get_room_id_by_cell(rooms, pawn_cell)
+
+		if room_id < 0:
+			continue
+
+		var target_pawn_id: String = get_nearest_enemy_pawn_id_in_room(
+			rooms,
+			pawns,
+			pawn_id,
+			room_id
+		)
+
+		if target_pawn_id == "":
+			continue
+
+		var target_cell: Vector2i = pawns[target_pawn_id]["cells"][0]
+
+		orders.append({
+			"pawn_id": pawn_id,
+			"task": {
+				"type": TASK_BATTLE,
+				"priority": 1000,
+				"room_id": room_id,
+				"target_pawn_id": target_pawn_id,
+				"target_cell": target_cell
+			}
+		})
+
+	return orders
+
+static func get_nearest_enemy_pawn_id_in_room(
+	rooms: Array[Dictionary],
+	pawns: Dictionary,
+	pawn_id: String,
+	room_id: int
+) -> String:
+	var pawn_cell: Vector2i = pawns[pawn_id]["cells"][0]
+
+	var nearest_pawn_id: String = ""
+	var nearest_distance: int = 2147483647
+
+	for other_id: String in pawns.keys():
+		if other_id == pawn_id:
+			continue
+		
+		if pawns[other_id]["state"] == STATE_MOVING:
+			continue
+
+		if not pawns_are_enemies(pawns, pawn_id, other_id):
+			continue
+
+		var other_cell: Vector2i = pawns[other_id]["cells"][0]
+
+		if get_room_id_by_cell(rooms, other_cell) != room_id:
+			continue
+
+		var cell_delta: Vector2i = other_cell - pawn_cell
+		var distance: int = cell_delta.x * cell_delta.x + cell_delta.y * cell_delta.y
+
+		if distance < nearest_distance:
+			nearest_distance = distance
+			nearest_pawn_id = other_id
+
+	return nearest_pawn_id
+
+static func pawns_are_enemies(
+	pawns: Dictionary,
+	pawn_id: String,
+	other_id: String
+) -> bool:
+	var pawn_starship: String = pawns[pawn_id]["node"].get_current_starship()
+
+	return not pawns[other_id]["node"].control_is_available(pawn_starship)
