@@ -80,6 +80,8 @@ var fortress_doors_levels_map: Array = [0.7, 0.4, 0.2, 0.1]
 var pawn_battle_recheck_timer: float = 0.0
 var pawn_battle_attack_timers: Dictionary = {}
 
+@export var pawn_battle_melee_visual_offset_px: float = 0.0
+
 
 func _ready() -> void:
 	restart()
@@ -302,6 +304,9 @@ func _on_pawn_movement_finished(pawn_id: String) -> void:
 		pawns[pawn_id]["state"] = PawnTaskLogic.STATE_WORKING
 		pawns[pawn_id]["task"] = after_move_task
 
+		if after_move_task.get("type", "") == PawnTaskLogic.TASK_BATTLE:
+			_update_battle_visual_offsets()
+
 		_set_pawn_task_animation(pawn_id)
 		return
 
@@ -490,6 +495,7 @@ func process_pawn_tasks(delta: float) -> void:
 	if pawn_battle_enabled:
 		_process_battle_tasks(delta)
 
+	_interrupt_station_workers_for_fire()
 	_cleanup_finished_tasks()
 	_apply_fire_workers()
 	_process_hull_repair_workers(delta)
@@ -703,6 +709,7 @@ func pawn_to_cell(
 	var source_cell: Vector2i = foundation_layer.local_to_map(
 		pawns[pawn_id]["node"].position
 	)
+	pawns[pawn_id]["node"].position = foundation_layer.map_to_local(source_cell)
 
 	pawns[pawn_id]["cells"] = [target_cell]
 	pawns[pawn_id]["state"] = PawnTaskLogic.STATE_MOVING
@@ -743,8 +750,12 @@ func _set_pawn_idle(pawn_id: String) -> void:
 	if pawn_battle_attack_timers.has(pawn_id):
 		pawn_battle_attack_timers.erase(pawn_id)
 
+	_reset_pawn_visual_position(pawn_id)
+
 	var pawn: Node2D = pawns[pawn_id]["node"]
 	pawn.set_animation(pawn.direction, "standing")
+
+	_update_battle_visual_offsets()
 
 func cell_to_room(cell: Vector2i) -> int:
 	for room: Dictionary in rooms:
@@ -821,6 +832,14 @@ func _get_vector_to_battle_target(
 	var cell_delta: Vector2i = target_cell - pawn_cell
 
 	if cell_delta == Vector2i.ZERO:
+		var visual_delta: Vector2 = (
+			pawns[target_pawn_id]["node"].position
+			- pawns[pawn_id]["node"].position
+		)
+
+		if visual_delta.length_squared() > 0.01:
+			return visual_delta.normalized()
+
 		return Vector2.DOWN
 
 	return Vector2(cell_delta).normalized()
@@ -831,6 +850,7 @@ func _process_battle_tasks(delta: float) -> void:
 	if pawn_battle_recheck_timer >= pawn_battle_recheck_interval:
 		pawn_battle_recheck_timer = 0.0
 		_refresh_battle_tasks()
+		_update_battle_visual_offsets()
 
 	_apply_battle_damage(delta)
 
@@ -963,6 +983,7 @@ func _set_battle_working(
 	pawns[pawn_id]["state"] = PawnTaskLogic.STATE_WORKING
 	pawns[pawn_id]["task"] = task
 
+	_update_battle_visual_offsets()
 	_set_pawn_task_animation(pawn_id)
 
 
@@ -1233,5 +1254,150 @@ func _friendly_pawn_already_approaches_battle_target(
 
 				if other_cell == target_cell:
 					return true
+
+	return false
+
+func _reset_pawn_visual_position(pawn_id: String) -> void:
+	if not pawns.has(pawn_id):
+		return
+
+	if pawns[pawn_id]["cells"].is_empty():
+		return
+
+	var cell: Vector2i = pawns[pawn_id]["cells"][0]
+	pawns[pawn_id]["node"].position = foundation_layer.map_to_local(cell)
+
+
+func _get_melee_visual_offset_radius() -> float:
+	if pawn_battle_melee_visual_offset_px > 0.0:
+		return pawn_battle_melee_visual_offset_px
+
+	var tile_size: Vector2i = foundation_layer.tile_set.tile_size
+	return float(min(tile_size.x, tile_size.y)) * 0.22
+
+
+func _get_melee_visual_offset(
+	index: int,
+	count: int,
+	radius: float
+) -> Vector2:
+	if count <= 1:
+		return Vector2.ZERO
+
+	if count == 2:
+		if index == 0:
+			return Vector2.LEFT * radius
+
+		return Vector2.RIGHT * radius
+
+	var angle: float = -PI * 0.5 + TAU * float(index) / float(count)
+	return Vector2(cos(angle), sin(angle)) * radius
+
+
+func _add_pawn_to_melee_visual_group(
+	groups: Dictionary,
+	cell: Vector2i,
+	pawn_id: String
+) -> void:
+	if not groups.has(cell):
+		groups[cell] = []
+
+	var group: Array = groups[cell]
+
+	if pawn_id in group:
+		return
+
+	group.append(pawn_id)
+	groups[cell] = group
+
+
+func _update_battle_visual_offsets() -> void:
+	var groups: Dictionary = {}
+	var offset_pawn_ids: Dictionary = {}
+
+	for pawn_id: String in pawns.keys():
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != PawnTaskLogic.TASK_BATTLE:
+			continue
+
+		var target_pawn_id: String = task.get("target_pawn_id", "")
+
+		if not _battle_target_is_valid(pawn_id, target_pawn_id):
+			continue
+
+		if not _battle_is_melee(pawn_id, target_pawn_id):
+			continue
+
+		var cell: Vector2i = pawn["cells"][0]
+
+		_add_pawn_to_melee_visual_group(groups, cell, pawn_id)
+		_add_pawn_to_melee_visual_group(groups, cell, target_pawn_id)
+
+	var radius: float = _get_melee_visual_offset_radius()
+
+	for cell: Vector2i in groups.keys():
+		var group: Array = groups[cell]
+		group.sort()
+
+		if group.size() < 2:
+			continue
+
+		var center: Vector2 = foundation_layer.map_to_local(cell)
+
+		for index: int in range(group.size()):
+			var pawn_id: String = group[index]
+
+			if not pawns.has(pawn_id):
+				continue
+
+			var offset: Vector2 = _get_melee_visual_offset(
+				index,
+				group.size(),
+				radius
+			)
+
+			pawns[pawn_id]["node"].position = center + offset
+			offset_pawn_ids[pawn_id] = true
+
+	for pawn_id: String in pawns.keys():
+		if offset_pawn_ids.has(pawn_id):
+			continue
+
+		if pawns[pawn_id]["state"] == PawnTaskLogic.STATE_MOVING:
+			continue
+
+		_reset_pawn_visual_position(pawn_id)
+
+func _interrupt_station_workers_for_fire() -> void:
+	for pawn_id: String in pawns.keys():
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != PawnTaskLogic.TASK_STATION:
+			continue
+
+		var room_id: int = int(task["room_id"])
+
+		if not _room_has_fire(room_id):
+			continue
+
+		_set_pawn_idle(pawn_id)
+
+func _room_has_fire(room_id: int) -> bool:
+	for fire_data: Dictionary in fires.values():
+		var fire: Node2D = fire_data["node"]
+
+		if int(fire.get_meta("room")) == room_id:
+			return true
 
 	return false
