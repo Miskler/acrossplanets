@@ -24,6 +24,24 @@ var room_hover_colors_by_id: Dictionary = {}
 var room_hover_tween_time: float = 0.12
 var room_hover_fill_alpha: float = 0.22
 var room_hover_outline_alpha: float = 0.9
+var room_hover_pawn_under_mouse_alpha_factor: float = 0.45
+var is_hover_room_dimmed_by_pawn: bool = false
+var room_hover_hole_enabled: bool = false
+var room_hover_hole_global_position: Vector2 = Vector2.ZERO
+var room_hover_hole_radius_px: float = 28.0
+var room_hover_hole_softness_px: float = 1.5
+var room_hover_hole_target_enabled: bool = false
+var room_hover_hole_progress: float = 0.0
+var room_hover_hole_tween: Tween
+var room_hover_hole_position_tween: Tween
+var room_hover_hole_move_time: float = 0.08
+var room_hover_hole_position_snap_distance_px: float = 1.0
+
+var room_hover_hole_show_time: float = 0.20
+var room_hover_hole_hide_time: float = 0.18
+
+var room_hover_hole_material: ShaderMaterial
+var room_icon_hole_materials_by_id: Dictionary = {}
 
 
 
@@ -33,10 +51,13 @@ func _ready() -> void:
 	under_mouse.collide_with_bodies = false
 	under_mouse.collision_mask = 0xFFFFFFFF
 	
+	_setup_room_hover_hole_material()
+	
 	icons_layer.connect("restart_finish", _finish_init)
 
 func _process(_delta: float) -> void:
 	_update_room_hover()
+	_update_room_hover_hole_materials()
 
 
 func _finish_init() -> void:
@@ -53,6 +74,7 @@ func _finish_init() -> void:
 		if icon != null:
 			icon.visible = false
 			icon.modulate.a = 0.0
+			_setup_room_icon_hole_material(room_id, icon)
 		
 		var area: Area2D = Area2D.new()
 		area.add_to_group("room")
@@ -178,20 +200,15 @@ func _input(event: InputEvent) -> void:
 		_update_room_hover()
 		return
 	
-	if event is InputEventMouseButton:
-		var mouse_event: InputEventMouseButton = event
-		
-		if mouse_event.button_index != MOUSE_BUTTON_LEFT:
-			return
-		
-		if mouse_event.pressed:
-			is_mouse_left_down = true
-			is_drag_selecting = false
-			drag_start_global = get_global_mouse_position()
-			drag_current_global = drag_start_global
-			queue_redraw()
-			return
-		
+	if event.is_action_pressed("select"):
+		is_mouse_left_down = true
+		is_drag_selecting = false
+		drag_start_global = get_global_mouse_position()
+		drag_current_global = drag_start_global
+		queue_redraw()
+		return
+	
+	if event.is_action_released("select"):
 		is_mouse_left_down = false
 		
 		if is_drag_selecting:
@@ -201,7 +218,14 @@ func _input(event: InputEvent) -> void:
 			return
 		
 		queue_redraw()
-		_click_select_or_action()
+		_click_select()
+		return
+	
+	if event.is_action_pressed("goto"):
+		if is_mouse_left_down:
+			return
+		
+		_click_goto()
 		return
 	
 	if event is InputEventMouseMotion:
@@ -238,15 +262,15 @@ func _draw() -> void:
 		2.0
 	)
 
-
-func _click_select_or_action() -> void:
+func _click_select() -> void:
 	under_mouse.position = get_global_mouse_position()
 	var hits: Array[Dictionary] = get_world_2d().direct_space_state.intersect_point(under_mouse)
 	
-	var rooms: Array = []
-	
 	for hit: Dictionary in hits:
 		var collider: Object = hit.get("collider", null)
+		
+		if collider == null:
+			continue
 		
 		if collider.is_in_group("pawn"):
 			pawn_selected(collider, collider.get_meta("uuid"))
@@ -255,6 +279,25 @@ func _click_select_or_action() -> void:
 		if collider.is_in_group("door"):
 			door_selected(collider, collider.get_meta("door_cells"))
 			return
+
+
+func _click_goto() -> void:
+	if selected_pawn_uuids.is_empty():
+		return
+	
+	under_mouse.position = get_global_mouse_position()
+	var hits: Array[Dictionary] = get_world_2d().direct_space_state.intersect_point(under_mouse)
+	
+	var rooms: Array = []
+	
+	for hit: Dictionary in hits:
+		var collider: Object = hit.get("collider", null)
+		
+		if collider == null:
+			continue
+		
+		if collider.is_in_group("pawn"):
+			return
 		
 		if collider.is_in_group("room"):
 			rooms.append(collider)
@@ -262,6 +305,20 @@ func _click_select_or_action() -> void:
 	if not rooms.is_empty():
 		room_selected(rooms[0], int(rooms[0].get_meta("room")))
 
+func _get_pawn_under_mouse() -> Area2D:
+	under_mouse.position = get_global_mouse_position()
+	var hits: Array[Dictionary] = get_world_2d().direct_space_state.intersect_point(under_mouse)
+	
+	for hit: Dictionary in hits:
+		var collider: Object = hit.get("collider", null)
+		
+		if collider == null:
+			continue
+		
+		if collider.is_in_group("pawn"):
+			return collider
+	
+	return null
 
 func _get_drag_global_rect() -> Rect2:
 	var min_pos: Vector2 = Vector2(
@@ -381,6 +438,19 @@ func pawn_selected(
 	pawn.set_selected(true)
 
 func _update_room_hover() -> void:
+	var raw_room_id: int = _get_room_id_under_mouse()
+	var pawn_under_mouse: Area2D = _get_pawn_under_mouse()
+	
+	var need_hole: bool = raw_room_id != -1 and pawn_under_mouse != null
+	
+	if need_hole:
+		_set_room_hover_hole(true, pawn_under_mouse.global_position)
+	else:
+		_set_room_hover_hole(false, room_hover_hole_global_position)
+	
+	if is_showing_all_rooms:
+		return
+	
 	if selected_pawn_uuids.is_empty():
 		if hovered_room_id != -1:
 			_set_room_hovered(hovered_room_id, false)
@@ -388,10 +458,7 @@ func _update_room_hover() -> void:
 		
 		return
 	
-	if is_showing_all_rooms:
-		return
-	
-	var room_id: int = _get_room_id_under_mouse()
+	var room_id: int = raw_room_id
 	
 	if room_id != -1 and _is_only_selected_room(room_id):
 		room_id = -1
@@ -540,20 +607,25 @@ func _draw_room_hover() -> void:
 	for room_id_variant: Variant in room_hover_alpha_by_id.keys():
 		var room_id: int = int(room_id_variant)
 		
+		var hover_alpha: float = float(room_hover_alpha_by_id.get(room_id, 0.0))
+		
+		if hover_alpha <= 0.0:
+			continue
+		
 		var main_color: Color = room_hover_colors_by_id[room_id]
 		
 		var fill_color: Color = Color(
 			main_color.r,
 			main_color.g,
 			main_color.b,
-			room_hover_fill_alpha
+			room_hover_fill_alpha * hover_alpha
 		)
 		
 		var outline_color: Color = Color(
 			main_color.r,
 			main_color.g,
 			main_color.b,
-			room_hover_outline_alpha
+			room_hover_outline_alpha * hover_alpha
 		)
 		
 		for polygon: PackedVector2Array in room_hover_polygons_by_id[room_id]:
@@ -568,3 +640,120 @@ func _closed_polygon(polygon: PackedVector2Array) -> PackedVector2Array:
 		result.append(result[0])
 	
 	return result
+
+
+func _setup_room_hover_hole_material() -> void:
+	room_hover_hole_material = load("res://scripts/hole_in_room.material")
+	material = room_hover_hole_material
+
+
+func _setup_room_icon_hole_material(room_id: int, icon: CanvasItem) -> void:
+	var shader_material: ShaderMaterial = load("res://scripts/hole_in_room.material")
+	icon.material = shader_material
+	room_icon_hole_materials_by_id[room_id] = shader_material
+
+func _update_room_hover_hole_materials() -> void:
+	var hole_center_screen: Vector2 = Vector2.ZERO
+	
+	if room_hover_hole_enabled:
+		hole_center_screen = get_viewport().get_canvas_transform() * room_hover_hole_global_position
+	
+	_update_hole_material(
+		room_hover_hole_material,
+		hole_center_screen
+	)
+	
+	for shader_material_variant: Variant in room_icon_hole_materials_by_id.values():
+		var shader_material: ShaderMaterial = shader_material_variant
+		
+		_update_hole_material(
+			shader_material,
+			hole_center_screen
+		)
+
+
+func _update_hole_material(
+	shader_material: ShaderMaterial,
+	hole_center_screen: Vector2
+) -> void:
+	if shader_material == null:
+		return
+	
+	shader_material.set_shader_parameter("hole_progress", room_hover_hole_progress)
+	shader_material.set_shader_parameter("hole_center_screen", hole_center_screen)
+	shader_material.set_shader_parameter("hole_radius_px", room_hover_hole_radius_px)
+	shader_material.set_shader_parameter("hole_softness_px", room_hover_hole_softness_px)
+
+func _set_room_hover_hole(
+	enabled: bool,
+	gposition: Vector2
+) -> void:
+	if enabled:
+		_set_room_hover_hole_position(gposition)
+	
+	if room_hover_hole_target_enabled == enabled:
+		return
+	
+	room_hover_hole_target_enabled = enabled
+	
+	if room_hover_hole_tween != null:
+		room_hover_hole_tween.kill()
+	
+	var from_progress: float = room_hover_hole_progress
+	var to_progress: float = 1.0 if enabled else 0.0
+	var tween_time: float = room_hover_hole_show_time if enabled else room_hover_hole_hide_time
+	
+	room_hover_hole_enabled = true
+	
+	room_hover_hole_tween = create_tween()
+	room_hover_hole_tween.set_trans(Tween.TRANS_SINE)
+	room_hover_hole_tween.set_ease(Tween.EASE_OUT)
+	
+	room_hover_hole_tween.tween_method(
+		func(value: float) -> void:
+			room_hover_hole_progress = value,
+		from_progress,
+		to_progress,
+		tween_time
+	)
+	
+	room_hover_hole_tween.finished.connect(
+		func() -> void:
+			if not room_hover_hole_target_enabled:
+				room_hover_hole_enabled = false
+				room_hover_hole_progress = 0.0
+			
+			room_hover_hole_tween = null
+	)
+
+func _set_room_hover_hole_position(gposition: Vector2) -> void:
+	if room_hover_hole_progress <= 0.001 and not room_hover_hole_enabled:
+		room_hover_hole_global_position = gposition
+		return
+	
+	if room_hover_hole_global_position.distance_to(gposition) <= room_hover_hole_position_snap_distance_px:
+		room_hover_hole_global_position = gposition
+		return
+	
+	if room_hover_hole_position_tween != null:
+		room_hover_hole_position_tween.kill()
+	
+	var from_position: Vector2 = room_hover_hole_global_position
+	var to_position: Vector2 = gposition
+	
+	room_hover_hole_position_tween = create_tween()
+	room_hover_hole_position_tween.set_trans(Tween.TRANS_SINE)
+	room_hover_hole_position_tween.set_ease(Tween.EASE_OUT)
+	
+	room_hover_hole_position_tween.tween_method(
+		func(value: Vector2) -> void:
+			room_hover_hole_global_position = value,
+		from_position,
+		to_position,
+		room_hover_hole_move_time
+	)
+	
+	room_hover_hole_position_tween.finished.connect(
+		func() -> void:
+			room_hover_hole_position_tween = null
+	)
