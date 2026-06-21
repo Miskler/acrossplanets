@@ -9,6 +9,16 @@ var move_speed_px: float = 80.0
 var oxygen_consumption: float = 2.0
 var point_reach_distance_px: float = 1.0
 
+# Логика следующая:
+# клан определяет будет ли пешка враждебна другим пешка / кораблю (враждебна при несоответсвии)
+var clan: String = ""
+# starship определяет какому кораблю пренадлежит пешка
+# только ИИ / юзер данного корабля может управлять пешкой
+var starship: String = ""
+# временный переход пешки под управление другого клана
+# в такие моменты она переходит под управление отдельного ИИ (действует как союзник, но управлять незя)
+var temporary_management_starship: String = ""
+
 var race: String = "human"
 var direction: String = "side" # side, top, down
 var animation: String = "standing" # standing, moving

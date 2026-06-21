@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dmb3m6dmhqykf"
-path="res://.godot/imported/guns.png-87513c8932a25796d785ccb4d71775ff.ctex"
+uid="uid://bacu0sxrqncbr"
+path="res://.godot/imported/medicine.png-105dacd9b88a0910b7cdd06dcdc89004.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/consoles/guns.png"
-dest_files=["res://.godot/imported/guns.png-87513c8932a25796d785ccb4d71775ff.ctex"]
+source_file="res://assets/consoles/icons/medicine.png"
+dest_files=["res://.godot/imported/medicine.png-105dacd9b88a0910b7cdd06dcdc89004.ctex"]
 
 [params]
 

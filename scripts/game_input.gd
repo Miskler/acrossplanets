@@ -1,5 +1,6 @@
 extends Node2D
 
+@onready var icons_layer = $"../Icons"
 
 var selected_pawn_uuids: Dictionary = {}
 
@@ -7,9 +8,23 @@ var under_mouse: PhysicsPointQueryParameters2D
 
 var is_mouse_left_down: bool = false
 var is_drag_selecting: bool = false
+var is_showing_all_rooms: bool = false
 var drag_start_global: Vector2 = Vector2.ZERO
 var drag_current_global: Vector2 = Vector2.ZERO
 var drag_threshold_px: float = 6.0
+
+var hovered_room_id: int = -1
+
+var room_hover_polygons_by_id: Dictionary = {}
+var room_hover_alpha_by_id: Dictionary = {}
+var room_hover_tweens: Dictionary = {}
+var room_icon_tweens: Dictionary = {}
+var room_hover_colors_by_id: Dictionary = {}
+
+var room_hover_tween_time: float = 0.12
+var room_hover_fill_alpha: float = 0.22
+var room_hover_outline_alpha: float = 0.9
+
 
 
 func _ready() -> void:
@@ -18,13 +33,25 @@ func _ready() -> void:
 	under_mouse.collide_with_bodies = false
 	under_mouse.collision_mask = 0xFFFFFFFF
 	
-	get_parent().connect("restart_finish", _finish_init)
+	icons_layer.connect("restart_finish", _finish_init)
+
+func _process(_delta: float) -> void:
+	_update_room_hover()
 
 
 func _finish_init() -> void:
 	for room: Dictionary in get_parent().rooms:
 		var room_id: int = int(room.get("room_id", -1))
 		var polygons: Array = room.get("polygons", [])
+		
+		var room_kind: String = str(room["kind"])
+		room_hover_colors_by_id[room_id] = Color(icons_layer.icons_main_colors[room_kind])
+		
+		room_hover_polygons_by_id[room_id] = polygons
+		
+		var icon: CanvasItem = icons_layer.get_node("RoomIcon_%s" % room_id)
+		icon.visible = false
+		icon.modulate.a = 0.0
 		
 		var area: Area2D = Area2D.new()
 		area.add_to_group("room")
@@ -46,6 +73,7 @@ func _finish_init() -> void:
 			
 			area.add_child(collision_polygon)
 	
+	print(2)
 	create_door_areas(get_parent().foundation_layer, self)
 
 
@@ -139,6 +167,17 @@ static func create_door_areas(
 
 
 func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("show_all_rooms"):
+		is_showing_all_rooms = true
+		_set_all_rooms_visible(true)
+		return
+	
+	if event.is_action_released("show_all_rooms"):
+		is_showing_all_rooms = false
+		_set_all_rooms_visible(false)
+		_update_room_hover()
+		return
+	
 	if event is InputEventMouseButton:
 		var mouse_event: InputEventMouseButton = event
 		
@@ -179,6 +218,8 @@ func _input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
+	_draw_room_hover()
+	
 	if not is_drag_selecting:
 		return
 	
@@ -325,3 +366,187 @@ func pawn_selected(
 	selected_pawn_uuids[uuid] = true
 	
 	pawn.set_selected(true)
+
+func _update_room_hover() -> void:
+	if selected_pawn_uuids.is_empty():
+		if hovered_room_id != -1:
+			_set_room_hovered(hovered_room_id, false)
+			hovered_room_id = -1
+		
+		return
+	
+	if is_showing_all_rooms:
+		return
+	
+	var room_id: int = _get_room_id_under_mouse()
+	
+	if room_id != -1 and _is_only_selected_room(room_id):
+		room_id = -1
+	
+	if hovered_room_id == room_id:
+		return
+	
+	if hovered_room_id != -1:
+		_set_room_hovered(hovered_room_id, false)
+	
+	hovered_room_id = room_id
+	
+	if hovered_room_id != -1:
+		_set_room_hovered(hovered_room_id, true)
+
+func _get_selected_pawn_room_ids() -> Dictionary:
+	var result: Dictionary = {}
+	var tile_layer: TileMapLayer = get_parent().foundation_layer
+	
+	for uuid_variant: Variant in selected_pawn_uuids.keys():
+		var uuid: String = str(uuid_variant)
+		var pawn: Node2D = get_parent().pawns[uuid]["node"]
+		
+		var cell: Vector2i = tile_layer.local_to_map(tile_layer.to_local(pawn.global_position))
+		var room_id: int = get_parent().cell_to_room(cell)
+		
+		if room_id == -1:
+			continue
+		
+		result[room_id] = true
+	
+	return result
+
+func _is_only_selected_room(room_id: int) -> bool:
+	var selected_room_ids: Dictionary = _get_selected_pawn_room_ids()
+	print(selected_room_ids)
+	
+	if selected_room_ids.size() != 1:
+		return false
+	
+	return room_id in selected_room_ids
+
+func _get_room_id_under_mouse() -> int:
+	under_mouse.position = get_global_mouse_position()
+	var hits: Array[Dictionary] = get_world_2d().direct_space_state.intersect_point(under_mouse)
+	
+	for hit: Dictionary in hits:
+		var collider: Object = hit.get("collider", null)
+		
+		if collider == null:
+			continue
+		
+		if collider.is_in_group("room"):
+			return int(collider.get_meta("room"))
+	
+	return -1
+
+func _set_all_rooms_visible(to_visible: bool) -> void:
+	if to_visible:
+		for room_id_variant: Variant in room_hover_polygons_by_id.keys():
+			var room_id: int = int(room_id_variant)
+			_set_room_hovered(room_id, true)
+		
+		return
+	
+	var room_id_under_mouse: int = _get_room_id_under_mouse()
+	hovered_room_id = room_id_under_mouse
+	
+	for room_id_variant: Variant in room_hover_polygons_by_id.keys():
+		var room_id: int = int(room_id_variant)
+		
+		if room_id == room_id_under_mouse:
+			continue
+		
+		_set_room_hovered(room_id, false)
+
+func _set_room_hovered(room_id: int, hovered: bool) -> void:
+	_set_room_area_hovered(room_id, hovered)
+	_set_room_icon_hovered(room_id, hovered)
+
+
+func _set_room_area_hovered(room_id: int, hovered: bool) -> void:
+	if room_hover_tweens.has(room_id):
+		room_hover_tweens[room_id].kill()
+	
+	var from_alpha: float = float(room_hover_alpha_by_id.get(room_id, 0.0))
+	var to_alpha: float = 1.0 if hovered else 0.0
+	
+	var tween: Tween = create_tween()
+	room_hover_tweens[room_id] = tween
+	
+	tween.tween_method(
+		func(value: float) -> void:
+			room_hover_alpha_by_id[room_id] = value
+			queue_redraw(),
+		from_alpha,
+		to_alpha,
+		room_hover_tween_time
+	)
+	
+	tween.finished.connect(
+		func() -> void:
+			room_hover_tweens.erase(room_id)
+			
+			if not hovered:
+				room_hover_alpha_by_id.erase(room_id)
+			
+			queue_redraw()
+	)
+
+
+func _set_room_icon_hovered(room_id: int, hovered: bool) -> void:
+	var icon: CanvasItem = icons_layer.get_node("RoomIcon_%s" % room_id)
+	
+	if room_icon_tweens.has(room_id):
+		room_icon_tweens[room_id].kill()
+	
+	if hovered:
+		icon.visible = true
+	
+	var tween: Tween = create_tween()
+	room_icon_tweens[room_id] = tween
+	
+	tween.tween_property(
+		icon,
+		"modulate:a",
+		1.0 if hovered else 0.0,
+		room_hover_tween_time
+	)
+	
+	tween.finished.connect(
+		func() -> void:
+			room_icon_tweens.erase(room_id)
+			
+			if not hovered:
+				icon.visible = false
+	)
+
+
+func _draw_room_hover() -> void:
+	for room_id_variant: Variant in room_hover_alpha_by_id.keys():
+		var room_id: int = int(room_id_variant)
+		
+		var main_color: Color = room_hover_colors_by_id[room_id]
+		
+		var fill_color: Color = Color(
+			main_color.r,
+			main_color.g,
+			main_color.b,
+			room_hover_fill_alpha
+		)
+		
+		var outline_color: Color = Color(
+			main_color.r,
+			main_color.g,
+			main_color.b,
+			room_hover_outline_alpha
+		)
+		
+		for polygon: PackedVector2Array in room_hover_polygons_by_id[room_id]:
+			draw_colored_polygon(polygon, fill_color)
+			draw_polyline(_closed_polygon(polygon), outline_color, 2.0, true)
+
+
+func _closed_polygon(polygon: PackedVector2Array) -> PackedVector2Array:
+	var result: PackedVector2Array = polygon.duplicate()
+	
+	if result.size() > 0:
+		result.append(result[0])
+	
+	return result

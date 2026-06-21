@@ -1,104 +1,97 @@
 [gd_resource type="TileSet" format=3 uid="uid://b1yo42dqcnhur"]
 
-[ext_resource type="Texture2D" uid="uid://budhe04fx1gd8" path="res://assets/consoles/captains_bridge.png" id="1_2n0xo"]
-[ext_resource type="Texture2D" uid="uid://cnmrwbuwf76dn" path="res://assets/consoles/shield_generator.png" id="2_hunjv"]
-[ext_resource type="Texture2D" uid="uid://bb2h61fvivt8g" path="res://assets/consoles/cameras.png" id="3_gl2bk"]
-[ext_resource type="Texture2D" uid="uid://ueno8ajqhupf" path="res://assets/consoles/doors.png" id="4_b2dxp"]
-[ext_resource type="Texture2D" uid="uid://te3abg6xlsvd" path="res://assets/consoles/drones.png" id="5_3d70b"]
-[ext_resource type="Texture2D" uid="uid://cfr0efpjgt5or" path="res://assets/consoles/engines.png" id="6_u1nq7"]
-[ext_resource type="Texture2D" uid="uid://dmb3m6dmhqykf" path="res://assets/consoles/guns.png" id="7_0qcag"]
-[ext_resource type="Texture2D" uid="uid://c1mkst5newmwo" path="res://assets/consoles/mind_control.png" id="8_ermt1"]
+[ext_resource type="Texture2D" uid="uid://cxv2k0u4kdhaj" path="res://assets/consoles/consoles.png" id="1_18adh"]
 
-[sub_resource type="NavigationPolygon" id="NavigationPolygon_2n0xo"]
-vertices = PackedVector2Array(4, 8, -4, 8, -4, -8, 4, -8)
-polygons = Array[PackedInt32Array]([PackedInt32Array(0, 1, 2, 3)])
-outlines = Array[PackedVector2Array]([PackedVector2Array(-4, -8, 4, -8, 4, 8, -4, 8)])
-agent_radius = 0.0
-
-[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_hunjv"]
-texture = ExtResource("1_2n0xo")
-0:0/0 = 0
-0:0/0/navigation_layer_0/polygon = SubResource("NavigationPolygon_2n0xo")
-0:0/0/custom_data_0 = "station"
-0:0/0/custom_data_1 = "captains_bridge"
+[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_2n0xo"]
+texture = ExtResource("1_18adh")
+texture_region_size = Vector2i(142, 142)
+0:8/0 = 0
+0:8/0/custom_data_0 = "station"
+0:8/0/custom_data_1 = "medicine"
+1:8/0 = 0
+1:8/0/custom_data_0 = "decoration"
+1:8/0/custom_data_1 = "medicine"
+2:8/0 = 0
+2:8/0/custom_data_0 = "decoration"
+2:8/0/custom_data_1 = "medicine"
+2:7/0 = 0
+2:7/0/custom_data_0 = "decoration"
+2:7/0/custom_data_1 = "mind_control"
+1:7/0 = 0
+1:7/0/custom_data_0 = "decoration"
+1:7/0/custom_data_1 = "mind_control"
+0:7/0 = 0
+0:7/0/custom_data_0 = "station"
+0:7/0/custom_data_1 = "mind_control"
+1:6/0 = 0
+1:6/0/custom_data_0 = "decoration"
+1:6/0/custom_data_1 = "guns"
+2:6/0 = 0
+2:6/0/custom_data_0 = "decoration"
+2:6/0/custom_data_1 = "guns"
+0:6/0 = 0
+0:6/0/custom_data_0 = "station"
+0:6/0/custom_data_1 = "guns"
+1:5/0 = 0
+1:5/0/custom_data_0 = "decoration"
+1:5/0/custom_data_1 = "drones"
+0:5/0 = 0
+0:5/0/custom_data_0 = "station"
+0:5/0/custom_data_1 = "drones"
+2:5/0 = 0
+2:5/0/custom_data_0 = "decoration"
+2:5/0/custom_data_1 = "drones"
+1:4/0 = 0
+1:4/0/custom_data_0 = "decoration"
+1:4/0/custom_data_1 = "cameras"
+0:4/0 = 0
+0:4/0/custom_data_0 = "station"
+0:4/0/custom_data_1 = "cameras"
+2:4/0 = 0
+2:4/0/custom_data_0 = "decoration"
+2:4/0/custom_data_1 = "cameras"
+1:3/0 = 0
+1:3/0/custom_data_0 = "decoration"
+1:3/0/custom_data_1 = "captains_bridge"
+0:3/0 = 0
+0:3/0/custom_data_0 = "station"
+0:3/0/custom_data_1 = "captains_bridge"
+2:3/0 = 0
+2:3/0/custom_data_0 = "decoration"
+2:3/0/custom_data_1 = "captains_bridge"
+2:2/0 = 0
+2:2/0/custom_data_0 = "decoration"
+2:2/0/custom_data_1 = "doors"
+1:2/0 = 0
+1:2/0/custom_data_0 = "decoration"
+1:2/0/custom_data_1 = "doors"
+0:2/0 = 0
+0:2/0/custom_data_0 = "station"
+0:2/0/custom_data_1 = "doors"
+2:1/0 = 0
+2:1/0/custom_data_0 = "decoration"
+2:1/0/custom_data_1 = "engines"
+1:1/0 = 0
+1:1/0/custom_data_0 = "decoration"
+1:1/0/custom_data_1 = "engines"
 0:1/0 = 0
-0:1/0/custom_data_0 = "decoration"
-0:1/0/custom_data_1 = "captains_bridge"
-
-[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_esudc"]
-texture = ExtResource("2_hunjv")
-0:0/0 = 0
-0:0/0/custom_data_0 = "station"
-0:0/0/custom_data_1 = "shield_generator"
-0:1/0 = 0
-0:1/0/custom_data_0 = "decoration"
-0:1/0/custom_data_1 = "shield_generator"
-
-[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_aan7q"]
-texture = ExtResource("3_gl2bk")
-0:0/0 = 0
-0:0/0/custom_data_0 = "station"
-0:0/0/custom_data_1 = "cameras"
-0:1/0 = 0
-0:1/0/custom_data_0 = "decoration"
-0:1/0/custom_data_1 = "cameras"
-
-[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_suqi2"]
-texture = ExtResource("4_b2dxp")
-0:0/0 = 0
-0:0/0/custom_data_0 = "station"
-0:0/0/custom_data_1 = "doors"
-0:1/0 = 0
-0:1/0/custom_data_0 = "decoration"
-0:1/0/custom_data_1 = "doors"
-
-[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_tc0lr"]
-texture = ExtResource("5_3d70b")
-0:0/0 = 0
-0:0/0/custom_data_0 = "station"
-0:0/0/custom_data_1 = "drones"
-0:1/0 = 0
-0:1/0/custom_data_0 = "decoration"
-0:1/0/custom_data_1 = "drones"
-
-[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_3c64c"]
-texture = ExtResource("6_u1nq7")
-0:0/0 = 0
-0:0/0/custom_data_0 = "station"
-0:0/0/custom_data_1 = "engines"
-0:1/0 = 0
-0:1/0/custom_data_0 = "decoration"
+0:1/0/custom_data_0 = "station"
 0:1/0/custom_data_1 = "engines"
-
-[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_qp56e"]
-texture = ExtResource("7_0qcag")
+2:0/0 = 0
+2:0/0/custom_data_0 = "decoration"
+2:0/0/custom_data_1 = "shields"
+1:0/0 = 0
+1:0/0/custom_data_0 = "decoration"
+1:0/0/custom_data_1 = "shields"
 0:0/0 = 0
 0:0/0/custom_data_0 = "station"
-0:0/0/custom_data_1 = "guns"
-0:1/0 = 0
-0:1/0/custom_data_0 = "decoration"
-0:1/0/custom_data_1 = "guns"
-
-[sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_vckir"]
-texture = ExtResource("8_ermt1")
-0:0/0 = 0
-0:0/0/custom_data_0 = "station"
-0:0/0/custom_data_1 = "mind_control"
-0:1/0 = 0
-0:1/0/custom_data_0 = "decoration"
-0:1/0/custom_data_1 = "mind_control"
+0:0/0/custom_data_1 = "shields"
 
 [resource]
+tile_size = Vector2i(142, 142)
 navigation_layer_0/layers = 1
 custom_data_layer_0/name = "type"
 custom_data_layer_0/type = 4
 custom_data_layer_1/name = "kind"
 custom_data_layer_1/type = 4
-sources/0 = SubResource("TileSetAtlasSource_hunjv")
-sources/1 = SubResource("TileSetAtlasSource_esudc")
-sources/2 = SubResource("TileSetAtlasSource_aan7q")
-sources/3 = SubResource("TileSetAtlasSource_suqi2")
-sources/4 = SubResource("TileSetAtlasSource_tc0lr")
-sources/5 = SubResource("TileSetAtlasSource_3c64c")
-sources/6 = SubResource("TileSetAtlasSource_qp56e")
-sources/7 = SubResource("TileSetAtlasSource_vckir")
+sources/8 = SubResource("TileSetAtlasSource_2n0xo")
