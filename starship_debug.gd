@@ -81,24 +81,24 @@ func draw_debug_path(path_data: Dictionary) -> void:
 	var debug_path_node = Node2D.new()
 	debug_path_node.name = "DebugPath"
 	add_child(debug_path_node)
-
+	
 	if not path_data.get("valid", false):
 		push_warning("Path is invalid: " + str(path_data.get("errors", [])))
 		return
-
+	
 	var points: PackedVector2Array = path_data.get("points", PackedVector2Array())
-
+	
 	if points.size() < 1:
 		return
-
+	
 	var line: Line2D = Line2D.new()
 	line.width = 3.0
 	line.default_color = Color(1.0, 0.0, 0.0, 0.85)
 	debug_path_node.add_child(line)
-
+	
 	for global_point: Vector2 in points:
 		line.add_point(debug_path_node.to_local(global_point))
-
+		
 		var marker: ColorRect = ColorRect.new()
 		marker.color = Color(1.0, 1.0, 0.0, 0.9)
 		marker.size = Vector2(6, 6)

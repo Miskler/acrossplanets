@@ -29,8 +29,7 @@ var point_reach_distance_px: float = 1.0
 # starship определяет какому кораблю пренадлежит пешка
 # только ИИ / юзер данного корабля может управлять пешкой
 var starship: String = ""
-# временный переход пешки под управление другого клана
-# в такие моменты она переходит под управление отдельного ИИ (действует как союзник, но управлять незя)
+# временный переход пешки под управление другого корабля (ии или игрока)
 var temporary_management_starship: String = ""
 
 var race: String = "human"
@@ -42,15 +41,12 @@ var selected: bool = false
 var movement_tween: Tween = null
 
 func control_is_available(target_starship: String) -> bool:
-	# Базовый путь, временного контроля нет
-	if starship == target_starship and temporary_management_starship.is_empty():
-		return true
-	
-	# Временный контроль другим судном
-	if temporary_management_starship == target_starship:
-		return true
-	
-	return false
+	return target_starship == get_current_starship()
+
+func get_current_starship() -> String:
+	if not temporary_management_starship.is_empty():
+		return temporary_management_starship
+	return starship
 
 func damage(value: int) -> void:
 	set_health(health-value)
