@@ -74,7 +74,6 @@ var fortress_doors_levels_map: Array = [0.7, 0.4, 0.2, 0.1]
 
 func _ready() -> void:
 	restart()
-	print(rooms[0])
 
 func _process(delta: float) -> void:
 	if oxygen_enabled:

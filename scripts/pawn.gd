@@ -7,6 +7,10 @@ signal dead
 @onready var sprite_layer: AnimatedSprite2D = $Sprite
 @onready var health_bar: ProgressBar = $HealthBar
 
+var animations: Dictionary = {
+	"human": preload("res://assets/races/human.tres")
+}
+
 var min_oxygen: int = 1
 var max_oxygen: int = 100
 
@@ -14,14 +18,14 @@ var max_health: int = 100
 var health: int = 100
 var no_oxygen_damage_factor: float = 1
 var fire_room_damage_factor: float = 1
+var battle_damage_factor: float = 1
 
+var impact_force: int = 3
 var move_speed_px: float = 80.0
 var oxygen_consumption: float = 2.0
 var point_reach_distance_px: float = 1.0
 
 # Логика следующая:
-# клан определяет будет ли пешка враждебна другим пешка / кораблю (враждебна при несоответсвии)
-var clan: String = ""
 # starship определяет какому кораблю пренадлежит пешка
 # только ИИ / юзер данного корабля может управлять пешкой
 var starship: String = ""
@@ -73,21 +77,24 @@ func set_race(new_race: String):
 		"human":
 			move_speed_px = 80
 			oxygen_consumption = 20
+			impact_force = 3
+			
 			max_health = 100
 			min_oxygen = 1
 			max_oxygen = 100
 			no_oxygen_damage_factor = 1
 			fire_room_damage_factor = 1
+			battle_damage_factor = 1
 		_:
 			push_error("Unknown race: "+str(new_race))
 	health_bar.max_value = max_health
+	sprite_layer.sprite_frames = animations[new_race]
 
 func set_animation(direct: String, anim: String) -> void:
 	direction = direct
 	animation = anim
 
-	var animation_name: String = "%s_%s_%s" % [
-		race,
+	var animation_name: String = "%s_%s" % [
 		direct,
 		anim
 	]

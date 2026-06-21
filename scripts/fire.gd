@@ -18,7 +18,6 @@ func _ready() -> void:
 func set_time_scale(new_scale: int):
 	new_scale = clamp(new_scale, 1, 10)
 	if time_scale != new_scale:
-		print(new_scale)
 		time_scale = new_scale
 		timer.wait_time = wait_time / time_scale
 		timer.start()

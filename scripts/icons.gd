@@ -20,7 +20,6 @@ func _ready() -> void:
 
 func restart_postprocess():
 	setup_icons(get_parent().foundation_layer, get_parent().rooms)
-	print(1)
 	emit_signal("restart_finish")
 
 func setup_icons(foundation_layer: TileMapLayer, rooms):

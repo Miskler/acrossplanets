@@ -74,7 +74,6 @@ func _finish_init() -> void:
 			
 			area.add_child(collision_polygon)
 	
-	print(2)
 	create_door_areas(get_parent().foundation_layer, self)
 
 
@@ -415,7 +414,6 @@ func _get_selected_pawn_room_ids() -> Dictionary:
 
 func _is_only_selected_room(room_id: int) -> bool:
 	var selected_room_ids: Dictionary = _get_selected_pawn_room_ids()
-	print(selected_room_ids)
 	
 	if selected_room_ids.size() != 1:
 		return false

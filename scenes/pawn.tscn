@@ -1,7 +1,7 @@
 [gd_scene format=3 uid="uid://d2ltkmdw8vb0a"]
 
 [ext_resource type="Script" uid="uid://clbvs8vtimav5" path="res://scripts/pawn.gd" id="1_ccfo0"]
-[ext_resource type="SpriteFrames" uid="uid://cyym0drqtgjb0" path="res://assets/races/races.tres" id="2_eqwak"]
+[ext_resource type="SpriteFrames" uid="uid://cyym0drqtgjb0" path="res://assets/races/human.tres" id="2_eqwak"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_ccfo0"]
 size = Vector2(40, 40)
@@ -12,7 +12,7 @@ script = ExtResource("1_ccfo0")
 [node name="Sprite" type="AnimatedSprite2D" parent="." unique_id=1882085587]
 scale = Vector2(0.16, 0.16)
 sprite_frames = ExtResource("2_eqwak")
-animation = &"human_side_repair"
+animation = &"side_station"
 
 [node name="Clickup" type="CollisionShape2D" parent="." unique_id=1038787742]
 shape = SubResource("RectangleShape2D_ccfo0")

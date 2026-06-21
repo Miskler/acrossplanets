@@ -83,7 +83,7 @@ func draw_debug_path(path_data: Dictionary) -> void:
 	add_child(debug_path_node)
 
 	if not path_data.get("valid", false):
-		print("Path is invalid: ", path_data.get("errors", []))
+		push_warning("Path is invalid: " + str(path_data.get("errors", [])))
 		return
 
 	var points: PackedVector2Array = path_data.get("points", PackedVector2Array())
