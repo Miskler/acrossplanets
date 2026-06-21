@@ -305,8 +305,7 @@ func _on_pawn_movement_finished(pawn_id: String) -> void:
 		_set_pawn_task_animation(pawn_id)
 		return
 
-	pawns[pawn_id]["state"] = PawnTaskLogic.STATE_IDLE
-	pawns[pawn_id]["task"] = {}
+	_set_pawn_idle(pawn_id)
 
 func recalc_rooms() -> Array[Dictionary]:
 	var rooms_data: Dictionary = ShipRooms.validate(foundation_layer, SAMPLES_PER_TILE)
@@ -718,7 +717,7 @@ func pawn_to_cell(
 	if not path_data["valid"]:
 		push_warning("Path invalid: " + str(path_data["errors"]))
 		pawns[pawn_id]["cells"] = [source_cell]
-		pawns[pawn_id]["state"] = PawnTaskLogic.STATE_IDLE
+		_set_pawn_idle(pawn_id)
 		return
 
 	pawns[pawn_id]["task"] = {
@@ -1025,8 +1024,7 @@ func _apply_battle_damage(delta: float) -> void:
 		var target_pawn_id: String = task.get("target_pawn_id", "")
 
 		if not _battle_target_is_valid(pawn_id, target_pawn_id):
-			pawns[pawn_id]["state"] = PawnTaskLogic.STATE_IDLE
-			pawns[pawn_id]["task"] = {}
+			_set_pawn_idle(pawn_id)
 			pawn_battle_attack_timers.erase(pawn_id)
 			continue
 
@@ -1117,8 +1115,7 @@ func _stop_battle_if_needed(pawn_id: String) -> void:
 	if task.get("type", "") != PawnTaskLogic.TASK_BATTLE:
 		return
 
-	pawns[pawn_id]["state"] = PawnTaskLogic.STATE_IDLE
-	pawns[pawn_id]["task"] = {}
+	_set_pawn_idle(pawn_id)
 	pawn_battle_attack_timers.erase(pawn_id)
 
 	pawns[pawn_id]["node"].set_animation(
@@ -1144,8 +1141,7 @@ func _on_pawn_dead(pawn_id: String) -> void:
 		if task.get("target_pawn_id", "") != pawn_id:
 			continue
 
-		pawns[other_id]["state"] = PawnTaskLogic.STATE_IDLE
-		pawns[other_id]["task"] = {}
+		_set_pawn_idle(other_id)
 		pawn_battle_attack_timers.erase(other_id)
 
 	pawn_battle_attack_timers.erase(pawn_id)
