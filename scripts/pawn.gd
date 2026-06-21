@@ -2,8 +2,18 @@ extends Node2D
 
 signal movement_finished
 signal movement_action_required(step: Dictionary, next_step_index: int)
+signal dead
 
 @onready var sprite_layer: AnimatedSprite2D = $Sprite
+@onready var health_bar: ProgressBar = $HealthBar
+
+var min_oxygen: int = 1
+var max_oxygen: int = 100
+
+var max_health: int = 100
+var health: int = 100
+var no_oxygen_damage_factor: float = 1
+var fire_room_damage_factor: float = 1
 
 var move_speed_px: float = 80.0
 var oxygen_consumption: float = 2.0
@@ -27,6 +37,29 @@ var selected: bool = false
 
 var movement_tween: Tween = null
 
+func control_is_available(target_starship: String) -> bool:
+	# Базовый путь, временного контроля нет
+	if starship == target_starship and temporary_management_starship.is_empty():
+		return true
+	
+	# Временный контроль другим судном
+	if temporary_management_starship == target_starship:
+		return true
+	
+	return false
+
+func damage(value: int) -> void:
+	set_health(health-value)
+
+func healing(value: int) -> void:
+	set_health(clamp(health+value, 0, max_health))
+
+func set_health(value: int) -> void:
+	health = value
+	health_bar.value = value
+	if health <= 0:
+		emit_signal("dead")
+		queue_free()
 
 func set_selected(new_selected: bool) -> void:
 	selected = new_selected
@@ -40,8 +73,14 @@ func set_race(new_race: String):
 		"human":
 			move_speed_px = 80
 			oxygen_consumption = 20
+			max_health = 100
+			min_oxygen = 1
+			max_oxygen = 100
+			no_oxygen_damage_factor = 1
+			fire_room_damage_factor = 1
 		_:
 			push_error("Unknown race: "+str(new_race))
+	health_bar.max_value = max_health
 
 func set_animation(direct: String, anim: String) -> void:
 	direction = direct

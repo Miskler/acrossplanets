@@ -51,6 +51,14 @@ var oxygen_consumption: Dictionary = {}
 var oxygen_room_polygons: Dictionary = {}
 var oxygen_recheck_timer: float = 0.0
 
+@export var pawn_environment_damage_enabled: bool = true
+@export var pawn_environment_damage_interval: float = 1.0
+
+@export var pawn_no_oxygen_damage: int = 6
+@export var pawn_fire_room_damage: int = 3
+
+var pawn_environment_damage_timer: float = 0.0
+
 @export var pawn_task_enabled: bool = true
 @export var pawn_task_recheck_interval: float = 0.25
 @export var hull_repair_seconds_per_step: float = 4.0
@@ -71,6 +79,9 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if oxygen_enabled:
 		process_oxygen(delta)
+	
+	if pawn_environment_damage_enabled:
+		_process_pawn_environment_damage(delta)
 	
 	if pawn_task_enabled:
 		process_pawn_tasks(delta)
@@ -102,9 +113,9 @@ func add_pawn(race: String) -> bool:
 		return false
 	
 	var pawn = load("res://scenes/pawn.tscn").instantiate()
-	pawn.set_race(race)
 	pawn.position = foundation_layer.map_to_local(available_cells[0])
 	pawns_layer.add_child(pawn)
+	pawn.set_race(race)
 	pawn.set_animation("down", "standing")
 	var uuid = NodeUUID.uuid_v4()
 	pawn.set_meta("uuid", uuid)
@@ -359,6 +370,60 @@ func process_oxygen(delta: float) -> void:
 		oxygen_by_room,
 		oxygen_visual_max_alpha
 	)
+
+func _process_pawn_environment_damage(delta: float) -> void:
+	pawn_environment_damage_timer += delta
+	
+	if pawn_environment_damage_timer < pawn_environment_damage_interval:
+		return
+	
+	var ticks: int = int(pawn_environment_damage_timer / pawn_environment_damage_interval)
+	pawn_environment_damage_timer -= ticks * pawn_environment_damage_interval
+	
+	for i in range(ticks):
+		_apply_pawn_environment_damage()
+
+
+func _apply_pawn_environment_damage() -> void:
+	var fire_rooms: Dictionary = _get_fire_rooms()
+	
+	for pawn_id: String in pawns.keys():
+		var pawn_data: Dictionary = pawns[pawn_id]
+		var pawn_node: Node2D = pawn_data["node"]
+		
+		var pawn_cell: Vector2i = foundation_layer.local_to_map(pawn_node.position)
+		var room_id: int = cell_to_room(pawn_cell)
+		
+		if room_id < 0:
+			continue
+		
+		var room_oxygen: int = int(oxygen_by_room[room_id])
+		var damage_value: float = 0.0
+		
+		if room_oxygen < pawn_node.min_oxygen:
+			damage_value += float(pawn_no_oxygen_damage) * pawn_node.no_oxygen_damage_factor
+		
+		if room_oxygen > pawn_node.max_oxygen:
+			damage_value += float(pawn_no_oxygen_damage) * pawn_node.no_oxygen_damage_factor
+		
+		if fire_rooms.has(room_id):
+			damage_value += float(pawn_fire_room_damage) * pawn_node.fire_room_damage_factor
+		
+		var final_damage: int = roundi(damage_value)
+		
+		if final_damage > 0:
+			pawn_node.damage(final_damage)
+
+
+func _get_fire_rooms() -> Dictionary:
+	var result: Dictionary = {}
+	
+	for fire_data: Dictionary in fires.values():
+		var fire: Node2D = fire_data["node"]
+		var room_id: int = int(fire.get_meta("room"))
+		result[room_id] = true
+	
+	return result
 
 func _process_fire_oxygen_starvation() -> void:
 	for fire_data: Dictionary in fires.values():
