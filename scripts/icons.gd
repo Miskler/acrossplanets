@@ -11,7 +11,8 @@ var icons_main_colors: Dictionary = {
 	"guns": "#FFFFFE",
 	"medicine": "#00C4E4",
 	"mind_control": "#FD5A65",
-	"shields": "#084FF3"
+	"shields": "#084FF3",
+	"oxygen": "#FCB485"
 }
 
 func _ready() -> void:

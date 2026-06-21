@@ -45,13 +45,14 @@ func _finish_init() -> void:
 		var polygons: Array = room.get("polygons", [])
 		
 		var room_kind: String = str(room["kind"])
-		room_hover_colors_by_id[room_id] = Color(icons_layer.icons_main_colors[room_kind])
+		room_hover_colors_by_id[room_id] = Color(icons_layer.icons_main_colors.get(room_kind, Color.BLACK))
 		
 		room_hover_polygons_by_id[room_id] = polygons
 		
-		var icon: CanvasItem = icons_layer.get_node("RoomIcon_%s" % room_id)
-		icon.visible = false
-		icon.modulate.a = 0.0
+		var icon: CanvasItem = icons_layer.get_node_or_null("RoomIcon_%s" % room_id)
+		if icon != null:
+			icon.visible = false
+			icon.modulate.a = 0.0
 		
 		var area: Area2D = Area2D.new()
 		area.add_to_group("room")
@@ -491,7 +492,10 @@ func _set_room_area_hovered(room_id: int, hovered: bool) -> void:
 
 
 func _set_room_icon_hovered(room_id: int, hovered: bool) -> void:
-	var icon: CanvasItem = icons_layer.get_node("RoomIcon_%s" % room_id)
+	var icon: CanvasItem = icons_layer.get_node_or_null("RoomIcon_%s" % room_id)
+	
+	if icon == null:
+		return
 	
 	if room_icon_tweens.has(room_id):
 		room_icon_tweens[room_id].kill()
