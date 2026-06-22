@@ -243,7 +243,7 @@ func _set_pawn_task_animation(pawn_id: String) -> void:
 
 	match task_type:
 		PawnTaskLogic.TASK_BATTLE:
-			pawn.set_animation(pawn.direction, "sabotage")
+			pawn.set_animation(pawn.direction, _get_battle_animation_name(pawn_id, task))
 		PawnTaskLogic.TASK_FIRE:
 			pawn.set_animation(pawn.direction, "extinguishing")
 		PawnTaskLogic.TASK_HULL_REPAIR:
@@ -251,7 +251,7 @@ func _set_pawn_task_animation(pawn_id: String) -> void:
 		PawnTaskLogic.TASK_STATION:
 			pawn.set_animation(pawn.direction, "station")
 		PawnTaskLogic.TASK_ROOM_DESTROY:
-			pawn.set_animation(pawn.direction, "battle")
+			pawn.set_animation(pawn.direction, "sabotage")
 
 
 func _get_pawn_task_look_vector(
