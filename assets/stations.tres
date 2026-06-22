@@ -1,6 +1,6 @@
 [gd_resource type="TileSet" format=3 uid="uid://b1yo42dqcnhur"]
 
-[ext_resource type="Texture2D" uid="uid://cxv2k0u4kdhaj" path="res://assets/consoles/consoles.png" id="1_18adh"]
+[ext_resource type="Texture2D" uid="uid://cq6xcqsb47rfc" path="res://assets/consoles/consoles.png" id="1_18adh"]
 
 [sub_resource type="TileSetAtlasSource" id="TileSetAtlasSource_2n0xo"]
 texture = ExtResource("1_18adh")
@@ -95,6 +95,15 @@ texture_region_size = Vector2i(127, 128)
 2:9/0 = 0
 2:9/0/custom_data_0 = "decoration"
 2:9/0/custom_data_1 = "oxygen"
+0:10/0 = 0
+0:10/0/custom_data_0 = "station"
+0:10/0/custom_data_1 = "teleport"
+1:10/0 = 0
+1:10/0/custom_data_0 = "decoration"
+1:10/0/custom_data_1 = "teleport"
+2:10/0 = 0
+2:10/0/custom_data_0 = "decoration"
+2:10/0/custom_data_1 = "teleport"
 
 [resource]
 tile_size = Vector2i(142, 142)
