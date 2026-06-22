@@ -42,15 +42,21 @@ var fires: Dictionary = {}
 @export var oxygen_hole_loss_per_impact: float = 10.0
 
 @export var oxygen_visual_max_alpha: float = 0.65
+@export var oxygen_no_oxygen_hatching_alpha: float = 0.85
+@export var oxygen_no_oxygen_hatching_spacing_px: int = 12
+@export var oxygen_no_oxygen_hatching_line_width_px: int = 4
 @export var oxygen_recheck_interval: float = 0.25
+@export var oxygen_no_oxygen_threshold: float = 1.0
+@export var oxygen_no_oxygen_hatching_fade_speed: float = 6.0
 
 var oxygen_pawn_consumption: Dictionary = {}
-var oxygen_overlay_layer: Node2D
+@onready var oxygen_overlay_layer: Node2D = foundation_layer
 var oxygen_by_room: Dictionary = {}
 var oxygen_room_areas: Dictionary = {}
 var oxygen_door_links: Array[Dictionary] = []
 var oxygen_consumption: Dictionary = {}
 var oxygen_room_polygons: Dictionary = {}
+var oxygen_no_oxygen_hatching_texture: Texture2D
 var oxygen_recheck_timer: float = 0.0
 
 @export var pawn_environment_damage_enabled: bool = true
@@ -356,16 +362,27 @@ func setup_oxygen() -> void:
 	
 	_recalculate_oxygen_consumption()
 	
+	oxygen_no_oxygen_hatching_texture = OxygenLogic.create_diagonal_hatching_texture(
+		oxygen_no_oxygen_hatching_spacing_px,
+		oxygen_no_oxygen_hatching_line_width_px,
+		Color(1.0, 0.35, 0.12, 1.0)
+	)
+	
 	oxygen_room_polygons = OxygenLogic.create_room_oxygen_polygons(
 		rooms,
 		foundation_layer,
-		oxygen_overlay_layer
+		oxygen_overlay_layer,
+		oxygen_no_oxygen_hatching_texture
 	)
 	
 	OxygenLogic.update_room_oxygen_polygons(
 		oxygen_room_polygons,
 		oxygen_by_room,
-		oxygen_visual_max_alpha
+		1.0,
+		oxygen_visual_max_alpha,
+		oxygen_no_oxygen_hatching_alpha,
+		oxygen_no_oxygen_threshold,
+		oxygen_no_oxygen_hatching_fade_speed
 	)
 
 func process_oxygen(delta: float) -> void:
@@ -392,7 +409,11 @@ func process_oxygen(delta: float) -> void:
 	OxygenLogic.update_room_oxygen_polygons(
 		oxygen_room_polygons,
 		oxygen_by_room,
-		oxygen_visual_max_alpha
+		delta,
+		oxygen_visual_max_alpha,
+		oxygen_no_oxygen_hatching_alpha,
+		oxygen_no_oxygen_threshold,
+		oxygen_no_oxygen_hatching_fade_speed
 	)
 
 func _process_pawn_environment_damage(delta: float) -> void:
@@ -421,7 +442,7 @@ func _apply_pawn_environment_damage() -> void:
 		if room_id < 0:
 			continue
 		
-		var room_oxygen: int = int(oxygen_by_room[room_id])
+		var room_oxygen: float = float(oxygen_by_room[room_id])
 		var damage_value: float = 0.0
 		
 		if room_oxygen < pawn_node.min_oxygen:
@@ -454,7 +475,7 @@ func _process_fire_oxygen_starvation() -> void:
 		var fire: Node2D = fire_data["node"]
 		var room_index: int = int(fire.get_meta("room"))
 		
-		if int(oxygen_by_room[room_index]) <= 0:
+		if float(oxygen_by_room[room_index]) <= oxygen_no_oxygen_threshold:
 			fire.oxygen_starvation()
 
 func _recalculate_oxygen_consumption() -> void:
@@ -483,12 +504,7 @@ func _recalculate_oxygen_consumption() -> void:
 func _ensure_oxygen_overlay_layer() -> void:
 	if oxygen_overlay_layer != null:
 		return
-	
-	oxygen_overlay_layer = Node2D.new()
-	oxygen_overlay_layer.name = "OxygenOverlay"
-	oxygen_overlay_layer.z_index = 20
-	
-	add_child(oxygen_overlay_layer)
+	push_error("Нужно настроить оверлеи для рендера кислорода")
 
 
 func process_pawn_tasks(delta: float) -> void:

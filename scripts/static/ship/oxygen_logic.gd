@@ -121,11 +121,11 @@ static func calculate_room_areas(
 	
 	return result
 
-
 static func create_room_oxygen_polygons(
 	rooms: Array[Dictionary],
 	source_space: CanvasItem,
-	target_parent: CanvasItem
+	target_parent: CanvasItem,
+	hatching_texture: Texture2D
 ) -> Dictionary:
 	for child: Node in target_parent.get_children():
 		child.queue_free()
@@ -135,7 +135,8 @@ static func create_room_oxygen_polygons(
 	for room_index: int in range(rooms.size()):
 		var room: Dictionary = rooms[room_index]
 		var source_polygons: Array = room["polygons"]
-		var polygon_nodes: Array[Polygon2D] = []
+		var fill_nodes: Array[Polygon2D] = []
+		var hatch_nodes: Array[Polygon2D] = []
 		
 		for source_polygon: PackedVector2Array in source_polygons:
 			var polygon: PackedVector2Array = PackedVector2Array()
@@ -145,37 +146,96 @@ static func create_room_oxygen_polygons(
 				var local_point: Vector2 = target_parent.to_local(global_point)
 				polygon.append(local_point)
 			
-			var polygon_node: Polygon2D = Polygon2D.new()
-			polygon_node.name = "OxygenRoom_%s" % room_index
-			polygon_node.polygon = polygon
-			polygon_node.color = Color(1.0, 0.0, 0.0, 0.0)
+			var fill_node: Polygon2D = Polygon2D.new()
+			fill_node.name = "OxygenRoomFill_%s" % room_index
+			fill_node.polygon = polygon
+			fill_node.color = Color(1.0, 0.0, 0.0, 0.0)
+			target_parent.add_child(fill_node)
+			fill_nodes.append(fill_node)
 			
-			target_parent.add_child(polygon_node)
-			polygon_nodes.append(polygon_node)
+			var hatch_node: Polygon2D = Polygon2D.new()
+			hatch_node.name = "OxygenRoomHatch_%s" % room_index
+			hatch_node.polygon = polygon
+			hatch_node.texture = hatching_texture
+			hatch_node.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+			hatch_node.texture_offset = Vector2.ZERO
+			hatch_node.texture_rotation = 0.0
+			hatch_node.texture_scale = Vector2.ONE
+			hatch_node.color = Color(1.0, 1.0, 1.0, 0.0)
+			hatch_node.visible = false
+			hatch_node.set_meta("fade_alpha", 0.0)
+			target_parent.add_child(hatch_node)
+			hatch_nodes.append(hatch_node)
 		
-		result[room_index] = polygon_nodes
+		result[room_index] = {
+			"fill": fill_nodes,
+			"hatch": hatch_nodes
+		}
 	
 	return result
 
+static func create_diagonal_hatching_texture(
+	spacing_px: int = 12,
+	line_width_px: int = 4,
+	line_color: Color = Color(1.0, 0.35, 0.12, 1.0)
+) -> Texture2D:
+	var size: int = maxi(spacing_px, 2)
+	var width: int = clampi(line_width_px, 1, size)
+	var image: Image = Image.create(size, size, false, Image.FORMAT_RGBA8)
+	image.fill(Color(0.0, 0.0, 0.0, 0.0))
+	
+	for y: int in range(size):
+		for x: int in range(size):
+			var diagonal_index: int = (x - y + size) % size
+			
+			if diagonal_index < width:
+				image.set_pixel(x, y, line_color)
+	
+	return ImageTexture.create_from_image(image)
 
 static func update_room_oxygen_polygons(
 	polygons_by_room: Dictionary,
 	oxygen_by_room: Dictionary,
-	max_alpha: float = 0.65
+	delta: float,
+	max_alpha: float = 0.65,
+	no_oxygen_hatching_alpha: float = 0.85,
+	no_oxygen_threshold: float = 0.5,
+	no_oxygen_hatching_fade_speed: float = 6.0
 ) -> void:
 	for room_index: int in polygons_by_room.keys():
 		var oxygen: float = float(oxygen_by_room[room_index])
 		var danger: float = clampf((100.0 - oxygen) / 100.0, 0.0, 1.0)
 		
-		var color: Color = Color(
+		var fill_color: Color = Color(
 			1.0,
 			0.05 + 0.15 * oxygen / 100.0,
 			0.02,
 			pow(danger, 1.35) * max_alpha
 		)
 		
-		for polygon_node: Polygon2D in polygons_by_room[room_index]:
-			polygon_node.color = color
+		var room_layers: Dictionary = polygons_by_room[room_index]
+		var fill_nodes: Array = room_layers["fill"]
+		var hatch_nodes: Array = room_layers["hatch"]
+		
+		for fill_node: Polygon2D in fill_nodes:
+			fill_node.color = fill_color
+		
+		var target_hatch_alpha: float = 0.0
+		
+		if oxygen <= no_oxygen_threshold:
+			target_hatch_alpha = no_oxygen_hatching_alpha
+		
+		for hatch_node: Polygon2D in hatch_nodes:
+			var current_alpha: float = float(hatch_node.get_meta("fade_alpha", 0.0))
+			var next_alpha: float = move_toward(
+				current_alpha,
+				target_hatch_alpha,
+				no_oxygen_hatching_fade_speed * delta
+			)
+			
+			hatch_node.set_meta("fade_alpha", next_alpha)
+			hatch_node.visible = next_alpha > 0.001
+			hatch_node.color = Color(1.0, 1.0, 1.0, next_alpha)
 
 
 static func build_room_cell_index(
