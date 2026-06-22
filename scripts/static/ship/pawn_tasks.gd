@@ -5,6 +5,7 @@ const TASK_FIRE: String = "fire"
 const TASK_HULL_REPAIR: String = "hull_repair"
 const TASK_STATION: String = "station"
 const TASK_BATTLE: String = "battle"
+const TASK_ROOM_DESTROY: String = "room_destroy"
 
 const TASK_LOCK_AUTO: String = "auto"
 const TASK_LOCK_PLAYER: String = "player"
@@ -19,19 +20,21 @@ static func create_task_orders(
 	rooms: Array[Dictionary],
 	pawns: Dictionary,
 	fires: Dictionary,
-	hull_holes: Dictionary
+	hull_holes: Dictionary,
+	owner_starship: String
 ) -> Array[Dictionary]:
 	var orders: Array[Dictionary] = []
 	var station_reservations: Dictionary = {}
 
 	for pawn_id: String in pawns.keys():
 		var pawn: Dictionary = pawns[pawn_id]
+		var pawn_node: Node2D = pawn["node"]
 
 		if pawn["state"] != STATE_IDLE:
 			continue
 
 		var pawn_cell: Vector2i = foundation_layer.local_to_map(
-			pawn["node"].position
+			pawn_node.position
 		)
 
 		var room_id: int = get_room_id_by_cell(rooms, pawn_cell)
@@ -39,15 +42,24 @@ static func create_task_orders(
 		if room_id < 0:
 			continue
 
-		var task: Dictionary = get_best_task_for_room(
-			rooms,
-			pawns,
-			fires,
-			hull_holes,
-			room_id,
-			pawn_id,
-			station_reservations
-		)
+		var task: Dictionary = {}
+
+		if pawn_node.control_is_available(owner_starship):
+			task = get_best_task_for_room(
+				rooms,
+				pawns,
+				fires,
+				hull_holes,
+				room_id,
+				pawn_id,
+				station_reservations
+			)
+		else:
+			task = get_room_destroy_task_for_room(
+				rooms,
+				room_id,
+				pawn_cell
+			)
 
 		if task.is_empty():
 			continue
@@ -61,6 +73,18 @@ static func create_task_orders(
 		})
 
 	return orders
+
+static func get_room_destroy_task_for_room(
+	rooms: Array[Dictionary],
+	room_id: int,
+	pawn_cell: Vector2i
+) -> Dictionary:
+	return {
+		"type": TASK_ROOM_DESTROY,
+		"priority": 25,
+		"room_id": room_id,
+		"target_cell": pawn_cell
+	}
 
 
 static func get_best_task_for_room(
@@ -177,11 +201,18 @@ static func get_station_task_for_room(
 
 static func count_workers_by_target(
 	pawns: Dictionary,
-	task_type: String
+	task_type: String,
+	owner_starship: String = ""
 ) -> Dictionary:
 	var result: Dictionary = {}
 
 	for pawn: Dictionary in pawns.values():
+		var pawn_node: Node2D = pawn["node"]
+		
+		if owner_starship != "":
+			if not pawn_node.control_is_available(owner_starship):
+				continue
+		
 		if pawn["state"] != STATE_WORKING:
 			continue
 

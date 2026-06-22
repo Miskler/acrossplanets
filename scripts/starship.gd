@@ -6,6 +6,9 @@ signal restart_finish()
 signal add_pawn_event(node, uuid)
 signal delete_pawn_event(node, uuid)
 
+signal room_hp_changed(room_id: int, hp: float)
+signal room_hp_depleted(room_id: int)
+
 @export var pawns2spawn: Array[Dictionary] = [{"race": "human"}, {"race": "human"}, {"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
 
 @onready var foundation_layer = $Foundation
@@ -88,6 +91,14 @@ var pawn_battle_attack_timers: Dictionary = {}
 
 @export var pawn_battle_melee_visual_offset_px: float = 0.0
 
+@export var room_hp_enabled: bool = true
+@export var room_hp_max: float = 100.0
+@export var room_fire_damage_per_second: float = 8.0
+@export var room_hostile_pawn_damage_per_second: float = 4.0
+
+var room_hp_by_room: Dictionary = {}
+var depleted_room_ids: Dictionary = {}
+
 
 func _ready() -> void:
 	restart()
@@ -95,6 +106,9 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if oxygen_enabled:
 		process_oxygen(delta)
+	
+	if room_hp_enabled:
+		process_room_hp(delta)
 	
 	if pawn_environment_damage_enabled:
 		_process_pawn_environment_damage(delta)
@@ -108,6 +122,7 @@ func restart() -> void:
 	technical_layer.hide()
 	rooms = recalc_rooms()
 	setup_oxygen()
+	setup_room_hp()
 	
 	hull_holes = HullRepairLogic.collect_hull_holes(foundation_layer)
 	hull_repair_progress = {}
@@ -228,16 +243,15 @@ func _set_pawn_task_animation(pawn_id: String) -> void:
 
 	match task_type:
 		PawnTaskLogic.TASK_BATTLE:
-			pawn.set_animation(
-				pawn.direction,
-				_get_battle_animation_name(pawn_id, task)
-			)
+			pawn.set_animation(pawn.direction, "sabotage")
 		PawnTaskLogic.TASK_FIRE:
 			pawn.set_animation(pawn.direction, "extinguishing")
 		PawnTaskLogic.TASK_HULL_REPAIR:
 			pawn.set_animation(pawn.direction, "repair")
 		PawnTaskLogic.TASK_STATION:
 			pawn.set_animation(pawn.direction, "station")
+		PawnTaskLogic.TASK_ROOM_DESTROY:
+			pawn.set_animation(pawn.direction, "battle")
 
 
 func _get_pawn_task_look_vector(
@@ -257,6 +271,8 @@ func _get_pawn_task_look_vector(
 			return _get_vector_to_task_target(pawn_cell, task)
 		PawnTaskLogic.TASK_HULL_REPAIR:
 			return _get_vector_to_task_target(pawn_cell, task)
+		PawnTaskLogic.TASK_ROOM_DESTROY:
+			return Vector2.UP
 		PawnTaskLogic.TASK_STATION:
 			var room_id: int = int(task["room_id"])
 			var station_cell: Vector2i = rooms[room_id]["station_cell"]
@@ -511,7 +527,8 @@ func process_pawn_tasks(delta: float) -> void:
 	if pawn_battle_enabled:
 		_process_battle_tasks(delta)
 
-	var had_interrupted_workers: bool = _interrupt_station_workers_for_room_tasks()
+	_cleanup_hostile_utility_workers()
+	_interrupt_station_workers_for_room_tasks()
 	_cleanup_finished_tasks()
 	_apply_fire_workers()
 	_process_hull_repair_workers(delta)
@@ -524,8 +541,34 @@ func process_pawn_tasks(delta: float) -> void:
 	pawn_task_recheck_timer = 0.0
 	_assign_idle_pawn_tasks()
 
+func _cleanup_hostile_utility_workers() -> void:
+	for pawn_id: String in pawns.keys():
+		if _pawn_is_friendly_to_ship(pawn_id):
+			continue
+		
+		var pawn: Dictionary = pawns[pawn_id]
+		
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+		
+		var task: Dictionary = pawn["task"]
+		var task_type: String = task.get("type", "")
+		
+		match task_type:
+			PawnTaskLogic.TASK_FIRE:
+				_set_pawn_idle(pawn_id)
+			PawnTaskLogic.TASK_HULL_REPAIR:
+				_set_pawn_idle(pawn_id)
+			PawnTaskLogic.TASK_STATION:
+				_set_pawn_idle(pawn_id)
+
 func _process_station_workers(delta: float) -> void:
-	for pawn: Dictionary in pawns.values():
+	for pawn_id: String in pawns.keys():
+		if not _pawn_is_friendly_to_ship(pawn_id):
+			continue
+		
+		var pawn: Dictionary = pawns[pawn_id]
+		
 		if pawn["state"] != "working":
 			continue
 
@@ -540,6 +583,11 @@ func _process_station_workers(delta: float) -> void:
 
 		# тут уже эффект станции:
 		# генерация энергии, управление пушками, лечение, производство и т.д.
+		
+		#print("Пешка занята станцией в комнате "+str(task["room_id"]))
+
+		# тут уже эффект станции:
+		# генерация энергии, управление пушками, лечение, производство и т.д.
 
 func _assign_idle_pawn_tasks() -> void:
 	var orders: Array[Dictionary] = PawnTaskLogic.create_task_orders(
@@ -547,7 +595,8 @@ func _assign_idle_pawn_tasks() -> void:
 		rooms,
 		pawns,
 		fires,
-		hull_holes
+		hull_holes,
+		starship_uuid
 	)
 
 	for order: Dictionary in orders:
@@ -569,6 +618,9 @@ func _assign_idle_pawn_tasks() -> void:
 
 			PawnTaskLogic.TASK_STATION:
 				_start_station_task(pawn_id, task)
+
+			PawnTaskLogic.TASK_ROOM_DESTROY:
+				_start_pawn_work(pawn_id, task)
 
 
 func _start_pawn_work(pawn_id: String, task: Dictionary) -> void:
@@ -606,7 +658,8 @@ func _cleanup_finished_tasks() -> void:
 func _apply_fire_workers() -> void:
 	var workers_by_fire: Dictionary = PawnTaskLogic.count_workers_by_target(
 		pawns,
-		PawnTaskLogic.TASK_FIRE
+		PawnTaskLogic.TASK_FIRE,
+		starship_uuid
 	)
 
 	for fire_cell: Vector2i in fires.keys():
@@ -620,7 +673,8 @@ func _apply_fire_workers() -> void:
 func _process_hull_repair_workers(delta: float) -> void:
 	var workers_by_hole: Dictionary = PawnTaskLogic.count_workers_by_target(
 		pawns,
-		PawnTaskLogic.TASK_HULL_REPAIR
+		PawnTaskLogic.TASK_HULL_REPAIR,
+		starship_uuid
 	)
 
 	var finished_cells: Array[Vector2i] = HullRepairLogic.process_hull_repair(
@@ -1431,3 +1485,93 @@ func _room_has_hull_hole(room_id: int) -> bool:
 			return true
 
 	return false
+
+func setup_room_hp() -> void:
+	room_hp_by_room = {}
+	depleted_room_ids = {}
+	
+	for room_id: int in range(rooms.size()):
+		room_hp_by_room[room_id] = room_hp_max
+
+
+func process_room_hp(delta: float) -> void:
+	var damage_by_room: Dictionary = _get_room_damage_by_room()
+	
+	for room_id: int in range(rooms.size()):
+		if damage_by_room.has(room_id):
+			var current_hp: float = float(room_hp_by_room[room_id])
+			var damage: float = float(damage_by_room[room_id]) * delta
+			var next_hp: float = maxf(current_hp - damage, 0.0)
+			
+			room_hp_by_room[room_id] = next_hp
+			emit_signal("room_hp_changed", room_id, next_hp)
+			
+			if next_hp <= 0.0 and not depleted_room_ids.has(room_id):
+				depleted_room_ids[room_id] = true
+				emit_signal("room_hp_depleted", room_id)
+				_on_room_hp_depleted(room_id)
+			
+			continue
+		
+		if float(room_hp_by_room[room_id]) != room_hp_max:
+			room_hp_by_room[room_id] = room_hp_max
+			depleted_room_ids.erase(room_id)
+			emit_signal("room_hp_changed", room_id, room_hp_max)
+
+
+func _get_room_damage_by_room() -> Dictionary:
+	var result: Dictionary = {}
+	
+	for fire_data: Dictionary in fires.values():
+		var fire: Node2D = fire_data["node"]
+		var room_id: int = int(fire.get_meta("room"))
+		
+		_add_room_damage(result, room_id, room_fire_damage_per_second)
+	
+	for pawn_id: String in pawns.keys():
+		if _pawn_is_friendly_to_ship(pawn_id):
+			continue
+		
+		var pawn: Dictionary = pawns[pawn_id]
+		
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+		
+		var task: Dictionary = pawn["task"]
+		
+		if task.get("type", "") != PawnTaskLogic.TASK_ROOM_DESTROY:
+			continue
+		
+		var pawn_cell: Vector2i = foundation_layer.local_to_map(
+			pawn["node"].position
+		)
+		var current_room_id: int = cell_to_room(pawn_cell)
+		var task_room_id: int = int(task["room_id"])
+		
+		if current_room_id != task_room_id:
+			continue
+		
+		_add_room_damage(
+			result,
+			task_room_id,
+			room_hostile_pawn_damage_per_second
+		)
+	
+	return result
+
+
+func _add_room_damage(
+	damage_by_room: Dictionary,
+	room_id: int,
+	damage_per_second: float
+) -> void:
+	damage_by_room[room_id] = (
+		float(damage_by_room.get(room_id, 0.0))
+		+ damage_per_second
+	)
+
+func _pawn_is_friendly_to_ship(pawn_id: String) -> bool:
+	return pawns[pawn_id]["node"].control_is_available(starship_uuid)
+
+func _on_room_hp_depleted(room_id: int) -> void:
+	pass
