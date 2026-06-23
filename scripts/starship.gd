@@ -9,7 +9,7 @@ signal delete_pawn_event(node, uuid)
 signal room_hp_changed(room_id: int, hp: float)
 signal room_hp_depleted(room_id: int)
 
-@export var pawns2spawn: Array[Dictionary] = [{"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
+@export var pawns2spawn: Array[Dictionary] = [{"race": "human"}, {"race": "human"}, {"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
 
 @onready var foundation_layer = $Foundation
 @onready var stations_layer = $Stations
@@ -130,6 +130,25 @@ var room_station_hp_visual_layers_by_room: Dictionary = {}
 var room_station_hp_visual_phases_by_room: Dictionary = {}
 var room_station_hp_visual_frequencies_by_room: Dictionary = {}
 
+@export var ship_power_available: int = 10
+@export var room_integrity_max_default: int = 3
+@export var room_fortitude_max: float = 100.0
+@export var room_repair_fortitude_extra: float = 40.0
+@export var room_repair_per_worker_second: float = 25.0
+@export var room_default_unlocked_power: int = -1
+
+var room_integrity_by_room: Dictionary = {}
+var room_integrity_max_by_room: Dictionary = {}
+var room_fortitude_by_room: Dictionary = {}
+var room_max_power_by_room: Dictionary = {}
+var room_unlocked_max_power_by_room: Dictionary = {}
+var room_integrity_max_power_by_room: Dictionary = {}
+var room_requested_power_by_room: Dictionary = {}
+var room_current_power_by_room: Dictionary = {}
+var ship_power_used: int = 0
+var ship_power_unused: int = 0
+var room_sabotage_pawn_room_by_id: Dictionary = {}
+
 
 func _ready() -> void:
 	restart()
@@ -139,7 +158,7 @@ func _process(delta: float) -> void:
 		process_oxygen(delta)
 	
 	if room_hp_enabled:
-		process_room_hp(delta)
+		process_room_systems(delta)
 		_process_room_station_hp_visuals(delta)
 	
 	_process_door_close_cooldowns(delta)
@@ -304,6 +323,8 @@ func _set_pawn_task_animation(pawn_id: String) -> void:
 			pawn.set_animation(pawn.direction, "extinguishing")
 		PawnTaskLogic.TASK_HULL_REPAIR:
 			pawn.set_animation(pawn.direction, "repair")
+		PawnTaskLogic.TASK_ROOM_REPAIR:
+			pawn.set_animation(pawn.direction, "repair")
 		PawnTaskLogic.TASK_STATION:
 			pawn.set_animation(pawn.direction, "station")
 		PawnTaskLogic.TASK_ROOM_DESTROY:
@@ -327,21 +348,29 @@ func _get_pawn_task_look_vector(
 			return _get_vector_to_task_target(pawn_cell, task)
 		PawnTaskLogic.TASK_HULL_REPAIR:
 			return _get_vector_to_task_target(pawn_cell, task)
+		PawnTaskLogic.TASK_ROOM_REPAIR:
+			return _get_vector_to_room_station(pawn_cell, int(task["room_id"]))
 		PawnTaskLogic.TASK_ROOM_DESTROY:
 			return Vector2.UP
 		PawnTaskLogic.TASK_DOOR_DESTROY:
 			return _get_vector_to_door_task(pawn_id, task)
 		PawnTaskLogic.TASK_STATION:
-			var room_id: int = int(task["room_id"])
-			var station_cell: Vector2i = rooms[room_id]["station_cell"]
-			var cell_delta: Vector2i = station_cell - pawn_cell
-			
-			if cell_delta == Vector2i.ZERO:
-				return Vector2.UP
-
-			return Vector2(cell_delta).normalized()
+			return _get_vector_to_room_station(pawn_cell, int(task["room_id"]))
 
 	return Vector2.DOWN
+
+
+func _get_vector_to_room_station(
+	pawn_cell: Vector2i,
+	room_id: int
+) -> Vector2:
+	var station_cell: Vector2i = rooms[room_id]["station_cell"]
+	var cell_delta: Vector2i = station_cell - pawn_cell
+
+	if cell_delta == Vector2i.ZERO:
+		return Vector2.UP
+
+	return Vector2(cell_delta).normalized()
 
 
 func _get_vector_to_task_target(
@@ -602,8 +631,9 @@ func process_pawn_tasks(delta: float) -> void:
 	_restore_idle_door_hp()
 	active_door_attack_keys_this_tick = {}
 	_cleanup_hostile_utility_workers()
-	_interrupt_station_workers_for_room_tasks()
+	_interrupt_room_workers_for_priority_tasks()
 	_cleanup_finished_tasks()
+	_cleanup_invalid_room_repair_workers()
 	_apply_fire_workers()
 	_process_hull_repair_workers(delta)
 
@@ -1570,7 +1600,9 @@ func _assign_idle_pawn_tasks() -> void:
 		pawns,
 		fires,
 		hull_holes,
-		starship_uuid
+		starship_uuid,
+		room_integrity_by_room,
+		room_integrity_max_by_room
 	)
 
 	for order: Dictionary in orders:
@@ -1590,6 +1622,9 @@ func _assign_idle_pawn_tasks() -> void:
 			PawnTaskLogic.TASK_HULL_REPAIR:
 				_start_pawn_work(pawn_id, task)
 
+			PawnTaskLogic.TASK_ROOM_REPAIR:
+				_start_station_task(pawn_id, task)
+
 			PawnTaskLogic.TASK_STATION:
 				_start_station_task(pawn_id, task)
 
@@ -1600,6 +1635,9 @@ func _assign_idle_pawn_tasks() -> void:
 func _start_pawn_work(pawn_id: String, task: Dictionary) -> void:
 	pawns[pawn_id]["state"] = "working"
 	pawns[pawn_id]["task"] = task
+
+	if task.get("type", "") == PawnTaskLogic.TASK_ROOM_DESTROY:
+		room_sabotage_pawn_room_by_id[pawn_id] = int(task["room_id"])
 
 	_set_pawn_task_animation(pawn_id)
 
@@ -2284,6 +2322,7 @@ func _on_pawn_dead(pawn_id: String) -> void:
 
 	pawn_battle_attack_timers.erase(pawn_id)
 	door_destroy_attack_timers.erase(pawn_id)
+	room_sabotage_pawn_room_by_id.erase(pawn_id)
 
 	emit_signal("delete_pawn_event", pawn_node, pawn_id)
 
@@ -2500,7 +2539,7 @@ func _update_battle_visual_offsets() -> void:
 
 		_reset_pawn_visual_position(pawn_id)
 
-func _interrupt_station_workers_for_room_tasks() -> bool:
+func _interrupt_room_workers_for_priority_tasks() -> bool:
 	var interrupted: bool = false
 
 	for pawn_id: String in pawns.keys():
@@ -2510,17 +2549,21 @@ func _interrupt_station_workers_for_room_tasks() -> bool:
 			continue
 
 		var task: Dictionary = pawn["task"]
+		var task_type: String = task.get("type", "")
+		var room_id: int = int(task.get("room_id", -1))
 
-		if task.get("type", "") != PawnTaskLogic.TASK_STATION:
+		if room_id < 0:
 			continue
 
-		var room_id: int = int(task["room_id"])
+		if task_type == PawnTaskLogic.TASK_STATION:
+			if _room_has_fire(room_id) or _room_has_hull_hole(room_id) or _room_needs_repair(room_id):
+				_set_pawn_idle(pawn_id)
+				interrupted = true
 
-		if not (_room_has_fire(room_id) or _room_has_hull_hole(room_id)):
-			continue
-
-		_set_pawn_idle(pawn_id)
-		interrupted = true
+		elif task_type == PawnTaskLogic.TASK_ROOM_REPAIR:
+			if _room_has_fire(room_id) or _room_has_hull_hole(room_id) or not _room_needs_repair(room_id):
+				_set_pawn_idle(pawn_id)
+				interrupted = true
 
 	return interrupted
 
@@ -2542,13 +2585,137 @@ func _room_has_hull_hole(room_id: int) -> bool:
 
 	return false
 
+func _room_needs_repair(room_id: int) -> bool:
+	return int(room_integrity_by_room.get(room_id, room_integrity_max_default)) < int(room_integrity_max_by_room.get(room_id, room_integrity_max_default))
+
 func setup_room_hp() -> void:
 	room_hp_by_room = {}
 	depleted_room_ids = {}
+	room_integrity_by_room = {}
+	room_integrity_max_by_room = {}
+	room_fortitude_by_room = {}
+	room_max_power_by_room = {}
+	room_unlocked_max_power_by_room = {}
+	room_integrity_max_power_by_room = {}
+	room_requested_power_by_room = {}
+	room_current_power_by_room = {}
+	room_sabotage_pawn_room_by_id = {}
 	_setup_room_station_hp_visuals()
-	
+
 	for room_id: int in range(rooms.size()):
+		var integrity_max: int = _get_room_integrity_max(room_id)
+		var max_power: int = _get_room_station_max_power(room_id)
+		var unlocked_power: int = max_power
+
+		if room_default_unlocked_power >= 0:
+			unlocked_power = mini(room_default_unlocked_power, max_power)
+
+		room_integrity_max_by_room[room_id] = integrity_max
+		room_integrity_by_room[room_id] = integrity_max
+		room_fortitude_by_room[room_id] = room_fortitude_max
 		room_hp_by_room[room_id] = room_hp_max
+		room_max_power_by_room[room_id] = max_power
+		room_unlocked_max_power_by_room[room_id] = unlocked_power
+		room_requested_power_by_room[room_id] = unlocked_power
+		room_current_power_by_room[room_id] = 0
+
+	_recalculate_room_power()
+
+
+func _get_room_integrity_max(room_id: int) -> int:
+	return maxi(room_integrity_max_default, 1)
+
+
+func _get_room_station_max_power(room_id: int) -> int:
+	var result: int = 0
+
+	for cell: Vector2i in rooms[room_id]["cells"]:
+		var tile_data: TileData = stations_layer.get_cell_tile_data(cell)
+
+		if tile_data == null:
+			continue
+
+		if str(tile_data.get_custom_data("type")) != "station":
+			continue
+
+		if not tile_data.has_custom_data("max_power"):
+			continue
+
+		result = maxi(result, int(tile_data.get_custom_data("max_power")))
+
+	return result
+
+
+func set_ship_power_available(value: int) -> void:
+	ship_power_available = maxi(value, 0)
+	_recalculate_room_power()
+
+
+func set_room_unlocked_power(room_id: int, value: int) -> void:
+	var max_power: int = int(room_max_power_by_room.get(room_id, 0))
+	room_unlocked_max_power_by_room[room_id] = clampi(value, 0, max_power)
+	room_requested_power_by_room[room_id] = mini(
+		int(room_requested_power_by_room.get(room_id, 0)),
+		int(room_unlocked_max_power_by_room[room_id])
+	)
+	_recalculate_room_power()
+
+
+func set_room_requested_power(room_id: int, value: int) -> void:
+	var max_power: int = _get_room_requested_power_limit(room_id)
+	room_requested_power_by_room[room_id] = clampi(value, 0, max_power)
+	_recalculate_room_power()
+
+
+func _get_room_integrity_power_limit(room_id: int) -> int:
+	var max_power: int = int(room_max_power_by_room.get(room_id, 0))
+	var integrity: int = int(room_integrity_by_room.get(room_id, 0))
+	var integrity_max: int = int(room_integrity_max_by_room.get(room_id, 1))
+
+	if integrity_max <= 0:
+		return 0
+
+	return floori(float(max_power) * float(integrity) / float(integrity_max))
+
+
+func _get_room_effective_power_limit(room_id: int) -> int:
+	return mini(
+		int(room_max_power_by_room.get(room_id, 0)),
+		mini(
+			int(room_unlocked_max_power_by_room.get(room_id, 0)),
+			_get_room_integrity_power_limit(room_id)
+		)
+	)
+
+
+func _get_room_requested_power_limit(room_id: int) -> int:
+	return mini(
+		int(room_max_power_by_room.get(room_id, 0)),
+		int(room_unlocked_max_power_by_room.get(room_id, 0))
+	)
+
+
+func _recalculate_room_power() -> void:
+	var remaining_power: int = maxi(ship_power_available, 0)
+	ship_power_used = 0
+
+	for room_id: int in range(rooms.size()):
+		var integrity_limit: int = _get_room_integrity_power_limit(room_id)
+		room_integrity_max_power_by_room[room_id] = integrity_limit
+
+		var effective_limit: int = _get_room_effective_power_limit(room_id)
+		var requested_power: int = clampi(
+			int(room_requested_power_by_room.get(room_id, effective_limit)),
+			0,
+			_get_room_requested_power_limit(room_id)
+		)
+
+		var granted_power: int = mini(mini(requested_power, effective_limit), remaining_power)
+		room_current_power_by_room[room_id] = granted_power
+		remaining_power -= granted_power
+		ship_power_used += granted_power
+
+	ship_power_unused = remaining_power
 
 
 func _setup_room_station_hp_visuals() -> void:
@@ -2588,7 +2755,6 @@ func _ensure_room_station_hp_visual(room_id: int) -> void:
 	layer.name = "RoomStationHpVisual_" + str(room_id)
 	layer.tile_set = stations_layer.tile_set
 	layer.position = Vector2.ZERO
-	layer.z_index = 1
 	layer.z_as_relative = true
 	layer.modulate = Color(0.0, 0.0, 0.0, 0.0)
 
@@ -2624,9 +2790,20 @@ func _process_room_station_hp_visuals(delta: float) -> void:
 		return
 
 	for room_id: int in range(rooms.size()):
-		var hp: float = clampf(float(room_hp_by_room.get(room_id, room_hp_max)), 0.0, room_hp_max)
+		var integrity: int = int(room_integrity_by_room.get(room_id, room_integrity_max_default))
+		var integrity_max: int = int(room_integrity_max_by_room.get(room_id, room_integrity_max_default))
+		var fortitude: float = float(room_fortitude_by_room.get(room_id, room_fortitude_max))
 
-		if hp >= room_hp_max:
+		var integrity_ratio: float = clampf(float(integrity) / float(maxi(integrity_max, 1)), 0.0, 1.0)
+		var base_alpha: float = 1.0 - integrity_ratio
+		var fortitude_progress: float = 0.0
+
+		if fortitude < room_fortitude_max:
+			fortitude_progress = clampf(1.0 - fortitude / room_fortitude_max, 0.0, 1.0)
+		elif fortitude > room_fortitude_max:
+			fortitude_progress = clampf((fortitude - room_fortitude_max) / room_repair_fortitude_extra, 0.0, 1.0)
+
+		if base_alpha <= 0.0 and fortitude_progress <= 0.0:
 			_remove_room_station_hp_visual(room_id)
 			continue
 
@@ -2635,14 +2812,11 @@ func _process_room_station_hp_visuals(delta: float) -> void:
 		if not room_station_hp_visual_layers_by_room.has(room_id):
 			continue
 
-		var hp_ratio: float = clampf(hp / room_hp_max, 0.0, 1.0)
-		var damage_ratio: float = 1.0 - hp_ratio
-		var period: float = lerpf(
-			room_station_hp_visual_min_period,
+		var target_frequency: float = 1.0 / lerpf(
 			room_station_hp_visual_max_period,
-			hp_ratio
+			room_station_hp_visual_min_period,
+			fortitude_progress
 		)
-		var target_frequency: float = 1.0 / period
 		var current_frequency: float = float(
 			room_station_hp_visual_frequencies_by_room.get(room_id, target_frequency)
 		)
@@ -2658,77 +2832,200 @@ func _process_room_station_hp_visuals(delta: float) -> void:
 		room_station_hp_visual_phases_by_room[room_id] = phase
 
 		var pulse: float = (1.0 - cos(phase * TAU)) * 0.5
-		var alpha: float = pulse * room_station_hp_visual_max_alpha * clampf(
-			0.35 + damage_ratio * 0.65,
-			0.0,
-			1.0
-		)
+		var pulse_alpha: float = pulse * room_station_hp_visual_max_alpha * fortitude_progress
+		var alpha: float = clampf(maxf(base_alpha, pulse_alpha), 0.0, 1.0)
 		var layer: CanvasItem = room_station_hp_visual_layers_by_room[room_id]
 		layer.modulate = Color(0.0, 0.0, 0.0, alpha)
 
 
-func process_room_hp(delta: float) -> void:
-	var damage_by_room: Dictionary = _get_room_damage_by_room()
-	
+func process_room_systems(delta: float) -> void:
+	_refresh_room_sabotage_keepers()
+
+	var damage_by_room: Dictionary = _get_room_fortitude_damage_by_room()
+	var repair_by_room: Dictionary = _get_room_fortitude_repair_by_room()
+	var power_needs_recalc: bool = false
+
 	for room_id: int in range(rooms.size()):
+		var fortitude: float = float(room_fortitude_by_room.get(room_id, room_fortitude_max))
+		var integrity: int = int(room_integrity_by_room.get(room_id, room_integrity_max_default))
+		var integrity_max: int = int(room_integrity_max_by_room.get(room_id, room_integrity_max_default))
+
 		if damage_by_room.has(room_id):
-			var current_hp: float = float(room_hp_by_room[room_id])
-			var damage: float = float(damage_by_room[room_id]) * delta
-			var next_hp: float = maxf(current_hp - damage, 0.0)
-			
-			room_hp_by_room[room_id] = next_hp
-			emit_signal("room_hp_changed", room_id, next_hp)
-			
-			if next_hp <= 0.0 and not depleted_room_ids.has(room_id):
-				depleted_room_ids[room_id] = true
-				emit_signal("room_hp_depleted", room_id)
-				_on_room_hp_depleted(room_id)
-			
+			fortitude = maxf(fortitude - float(damage_by_room[room_id]) * delta, 0.0)
+
+			if fortitude <= 0.0:
+				if integrity > 0:
+					integrity -= 1
+					room_integrity_by_room[room_id] = integrity
+					_emit_room_integrity_changed(room_id)
+					power_needs_recalc = true
+
+				fortitude = room_fortitude_max
+
+			room_fortitude_by_room[room_id] = fortitude
 			continue
-		
-		if float(room_hp_by_room[room_id]) != room_hp_max:
-			room_hp_by_room[room_id] = room_hp_max
-			depleted_room_ids.erase(room_id)
-			emit_signal("room_hp_changed", room_id, room_hp_max)
+
+		if repair_by_room.has(room_id) and integrity < integrity_max:
+			fortitude += float(repair_by_room[room_id]) * delta
+
+			if fortitude >= room_fortitude_max + room_repair_fortitude_extra:
+				integrity += 1
+				room_integrity_by_room[room_id] = mini(integrity, integrity_max)
+				fortitude = room_fortitude_max
+				_finish_room_repair_workers(room_id)
+				_emit_room_integrity_changed(room_id)
+				power_needs_recalc = true
+
+			room_fortitude_by_room[room_id] = fortitude
+			continue
+
+		if _room_has_sabotage_keeper(room_id):
+			if fortitude > room_fortitude_max:
+				room_fortitude_by_room[room_id] = room_fortitude_max
+			continue
+
+		if fortitude != room_fortitude_max:
+			room_fortitude_by_room[room_id] = room_fortitude_max
+
+	if power_needs_recalc:
+		_recalculate_room_power()
 
 
-func _get_room_damage_by_room() -> Dictionary:
+func _emit_room_integrity_changed(room_id: int) -> void:
+	var integrity: int = int(room_integrity_by_room.get(room_id, 0))
+	var integrity_max: int = int(room_integrity_max_by_room.get(room_id, 1))
+	var hp_value: float = room_hp_max * float(integrity) / float(maxi(integrity_max, 1))
+	room_hp_by_room[room_id] = hp_value
+	depleted_room_ids.erase(room_id)
+	emit_signal("room_hp_changed", room_id, hp_value)
+
+	if integrity <= 0:
+		depleted_room_ids[room_id] = true
+		emit_signal("room_hp_depleted", room_id)
+		_on_room_hp_depleted(room_id)
+
+
+func _get_room_fortitude_damage_by_room() -> Dictionary:
 	var result: Dictionary = {}
-	
+
 	for fire_data: Dictionary in fires.values():
 		var fire: Node2D = fire_data["node"]
 		var room_id: int = int(fire.get_meta("room"))
-		
 		_add_room_damage(result, room_id, room_fire_damage_per_second)
-	
+
 	for pawn_id: String in pawns.keys():
 		if _pawn_is_friendly_to_ship(pawn_id):
 			continue
-		
+
 		var pawn: Dictionary = pawns[pawn_id]
-		
+
 		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
 			continue
-		
+
 		var task: Dictionary = pawn["task"]
-		
+
 		if task.get("type", "") != PawnTaskLogic.TASK_ROOM_DESTROY:
 			continue
-		
+
 		var pawn_cell: Vector2i = _pawn_position_to_foundation_cell(pawn_id)
 		var current_room_id: int = cell_to_room(pawn_cell)
 		var task_room_id: int = int(task["room_id"])
-		
+
 		if current_room_id != task_room_id:
 			continue
-		
-		_add_room_damage(
-			result,
-			task_room_id,
-			room_hostile_pawn_damage_per_second
-		)
-	
+
+		room_sabotage_pawn_room_by_id[pawn_id] = task_room_id
+		_add_room_damage(result, task_room_id, room_hostile_pawn_damage_per_second)
+
 	return result
+
+
+func _get_room_fortitude_repair_by_room() -> Dictionary:
+	var result: Dictionary = {}
+
+	for pawn_id: String in pawns.keys():
+		if not _pawn_is_friendly_to_ship(pawn_id):
+			continue
+
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != PawnTaskLogic.TASK_ROOM_REPAIR:
+			continue
+
+		var task_room_id: int = int(task["room_id"])
+		var pawn_cell: Vector2i = _pawn_position_to_foundation_cell(pawn_id)
+
+		if cell_to_room(pawn_cell) != task_room_id:
+			continue
+
+		if not _room_needs_repair(task_room_id):
+			continue
+
+		result[task_room_id] = float(result.get(task_room_id, 0.0)) + room_repair_per_worker_second
+
+	return result
+
+
+func _refresh_room_sabotage_keepers() -> void:
+	for pawn_id: String in room_sabotage_pawn_room_by_id.keys():
+		if not pawns.has(pawn_id):
+			room_sabotage_pawn_room_by_id.erase(pawn_id)
+			continue
+
+		var room_id: int = int(room_sabotage_pawn_room_by_id[pawn_id])
+		var pawn_cell: Vector2i = _pawn_position_to_foundation_cell(pawn_id)
+
+		if cell_to_room(pawn_cell) != room_id:
+			room_sabotage_pawn_room_by_id.erase(pawn_id)
+
+
+func _room_has_sabotage_keeper(room_id: int) -> bool:
+	for sabotage_room_variant: Variant in room_sabotage_pawn_room_by_id.values():
+		if int(sabotage_room_variant) == room_id:
+			return true
+
+	return false
+
+
+func _finish_room_repair_workers(room_id: int) -> void:
+	for pawn_id: String in pawns.keys():
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != PawnTaskLogic.TASK_ROOM_REPAIR:
+			continue
+
+		if int(task["room_id"]) != room_id:
+			continue
+
+		_set_pawn_idle(pawn_id)
+
+
+func _cleanup_invalid_room_repair_workers() -> void:
+	for pawn_id: String in pawns.keys():
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != PawnTaskLogic.TASK_ROOM_REPAIR:
+			continue
+
+		var room_id: int = int(task["room_id"])
+
+		if not _room_needs_repair(room_id):
+			_set_pawn_idle(pawn_id)
 
 
 func _add_room_damage(
@@ -2741,8 +3038,29 @@ func _add_room_damage(
 		+ damage_per_second
 	)
 
+func process_room_hp(delta: float) -> void:
+	process_room_systems(delta)
+
 func _pawn_is_friendly_to_ship(pawn_id: String) -> bool:
 	return pawns[pawn_id]["node"].control_is_available(starship_uuid)
 
 func _on_room_hp_depleted(room_id: int) -> void:
-	pass
+	room_fortitude_by_room[room_id] = room_fortitude_max
+
+	for pawn_id: String in pawns.keys():
+		var pawn: Dictionary = pawns[pawn_id]
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") == PawnTaskLogic.TASK_ROOM_DESTROY and int(task.get("room_id", -1)) == room_id:
+			room_sabotage_pawn_room_by_id.erase(pawn_id)
+			_set_pawn_idle(pawn_id)
+			continue
+
+		if pawn["state"] == PawnTaskLogic.STATE_MOVING:
+			var after_move_task: Dictionary = task.get("after_move_task", {})
+
+			if after_move_task.get("type", "") == PawnTaskLogic.TASK_ROOM_DESTROY and int(after_move_task.get("room_id", -1)) == room_id:
+				room_sabotage_pawn_room_by_id.erase(pawn_id)
+				_set_pawn_idle(pawn_id)
+
+	_recalculate_room_power()

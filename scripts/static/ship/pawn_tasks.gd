@@ -3,6 +3,7 @@ class_name PawnTaskLogic
 
 const TASK_FIRE: String = "fire"
 const TASK_HULL_REPAIR: String = "hull_repair"
+const TASK_ROOM_REPAIR: String = "room_repair"
 const TASK_STATION: String = "station"
 const TASK_BATTLE: String = "battle"
 const TASK_ROOM_DESTROY: String = "room_destroy"
@@ -22,10 +23,12 @@ static func create_task_orders(
 	pawns: Dictionary,
 	fires: Dictionary,
 	hull_holes: Dictionary,
-	owner_starship: String
+	owner_starship: String,
+	room_integrity_by_room: Dictionary = {},
+	room_integrity_max_by_room: Dictionary = {}
 ) -> Array[Dictionary]:
 	var orders: Array[Dictionary] = []
-	var station_reservations: Dictionary = {}
+	var target_reservations: Dictionary = {}
 
 	for pawn_id: String in pawns.keys():
 		var pawn: Dictionary = pawns[pawn_id]
@@ -53,20 +56,23 @@ static func create_task_orders(
 				hull_holes,
 				room_id,
 				pawn_id,
-				station_reservations
+				target_reservations,
+				room_integrity_by_room,
+				room_integrity_max_by_room
 			)
 		else:
 			task = get_room_destroy_task_for_room(
 				rooms,
 				room_id,
-				pawn_cell
+				pawn_cell,
+				room_integrity_by_room
 			)
 
 		if task.is_empty():
 			continue
 
-		if task["type"] == TASK_STATION:
-			station_reservations[task["target_cell"]] = true
+		if task["type"] == TASK_STATION or task["type"] == TASK_ROOM_REPAIR:
+			target_reservations[task["target_cell"]] = true
 
 		orders.append({
 			"pawn_id": pawn_id,
@@ -78,8 +84,12 @@ static func create_task_orders(
 static func get_room_destroy_task_for_room(
 	rooms: Array[Dictionary],
 	room_id: int,
-	pawn_cell: Vector2i
+	pawn_cell: Vector2i,
+	room_integrity_by_room: Dictionary = {}
 ) -> Dictionary:
+	if not room_integrity_by_room.is_empty() and int(room_integrity_by_room.get(room_id, 1)) <= 0:
+		return {}
+
 	return {
 		"type": TASK_ROOM_DESTROY,
 		"priority": 25,
@@ -95,28 +105,43 @@ static func get_best_task_for_room(
 	hull_holes: Dictionary,
 	room_id: int,
 	pawn_id: String,
-	station_reservations: Dictionary
+	target_reservations: Dictionary,
+	room_integrity_by_room: Dictionary = {},
+	room_integrity_max_by_room: Dictionary = {}
 ) -> Dictionary:
 	var fire_task: Dictionary = get_fire_task_for_room(fires, room_id)
 
 	if not fire_task.is_empty():
 		return fire_task
 
-	var repair_task: Dictionary = get_hull_repair_task_for_room(
+	var hull_repair_task: Dictionary = get_hull_repair_task_for_room(
 		rooms,
 		hull_holes,
 		room_id
 	)
 
-	if not repair_task.is_empty():
-		return repair_task
+	if not hull_repair_task.is_empty():
+		return hull_repair_task
+
+	var room_repair_task: Dictionary = get_room_repair_task_for_room(
+		rooms,
+		pawns,
+		room_id,
+		pawn_id,
+		target_reservations,
+		room_integrity_by_room,
+		room_integrity_max_by_room
+	)
+
+	if not room_repair_task.is_empty():
+		return room_repair_task
 
 	var station_task: Dictionary = get_station_task_for_room(
 		rooms,
 		pawns,
 		room_id,
 		pawn_id,
-		station_reservations
+		target_reservations
 	)
 
 	if not station_task.is_empty():
@@ -164,12 +189,52 @@ static func get_hull_repair_task_for_room(
 	return {}
 
 
+static func get_room_repair_task_for_room(
+	rooms: Array[Dictionary],
+	pawns: Dictionary,
+	room_id: int,
+	pawn_id: String,
+	target_reservations: Dictionary,
+	room_integrity_by_room: Dictionary,
+	room_integrity_max_by_room: Dictionary
+) -> Dictionary:
+	if room_integrity_by_room.is_empty():
+		return {}
+
+	var integrity: int = int(room_integrity_by_room.get(room_id, 0))
+	var integrity_max: int = int(room_integrity_max_by_room.get(room_id, 0))
+
+	if integrity >= integrity_max:
+		return {}
+
+	var room: Dictionary = rooms[room_id]
+	var main_cell: Variant = room["floor_main"]
+
+	if main_cell == null:
+		return {}
+
+	var target_cell: Vector2i = main_cell
+
+	if target_reservations.has(target_cell):
+		return {}
+
+	if is_cell_reserved_by_other_pawn(pawns, target_cell, pawn_id):
+		return {}
+
+	return {
+		"type": TASK_ROOM_REPAIR,
+		"priority": 30,
+		"room_id": room_id,
+		"target_cell": target_cell
+	}
+
+
 static func get_station_task_for_room(
 	rooms: Array[Dictionary],
 	pawns: Dictionary,
 	room_id: int,
 	pawn_id: String,
-	station_reservations: Dictionary
+	target_reservations: Dictionary
 ) -> Dictionary:
 	var room: Dictionary = rooms[room_id]
 
@@ -186,7 +251,7 @@ static func get_station_task_for_room(
 
 	var target_cell: Vector2i = main_cell
 
-	if station_reservations.has(target_cell):
+	if target_reservations.has(target_cell):
 		return {}
 
 	if is_cell_reserved_by_other_pawn(pawns, target_cell, pawn_id):
@@ -228,6 +293,38 @@ static func count_workers_by_target(
 			result[target_cell] = 0
 
 		result[target_cell] += 1
+
+	return result
+
+
+static func count_workers_by_room(
+	pawns: Dictionary,
+	task_type: String,
+	owner_starship: String = ""
+) -> Dictionary:
+	var result: Dictionary = {}
+
+	for pawn: Dictionary in pawns.values():
+		var pawn_node: Node2D = pawn["node"]
+
+		if owner_starship != "":
+			if not pawn_node.control_is_available(owner_starship):
+				continue
+
+		if pawn["state"] != STATE_WORKING:
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != task_type:
+			continue
+
+		var room_id: int = int(task["room_id"])
+
+		if not result.has(room_id):
+			result[room_id] = 0
+
+		result[room_id] += 1
 
 	return result
 
@@ -285,6 +382,12 @@ static func is_cell_reserved_by_other_pawn(
 
 		for pawn_cell: Vector2i in pawn["cells"]:
 			if pawn_cell == cell:
+				return true
+
+		var task: Dictionary = pawn["task"]
+
+		if task.has("reserved_target_cell"):
+			if task["reserved_target_cell"] == cell:
 				return true
 
 	return false
