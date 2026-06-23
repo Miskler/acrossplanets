@@ -379,8 +379,7 @@ func door_selected(
 	_area: Area2D,
 	cells: Array
 ) -> void:
-	await get_tree().create_timer(get_parent().time2change_door_state).timeout
-	DoorManager.toggle_door(get_parent().foundation_layer, cells)
+	get_parent().request_player_toggle_door(cells)
 
 
 func room_selected(
@@ -390,20 +389,20 @@ func room_selected(
 	if selected_pawn_uuids.is_empty():
 		return
 	
-	var available_cells: Array[Vector2i] = get_parent().dynamically_available_cells(room)
-	
-	if available_cells.is_empty():
-		return
-	
-	var cell_index: int = 0
-	
 	for uuid_variant: Variant in selected_pawn_uuids.keys():
-		if cell_index >= available_cells.size():
+		var uuid: String = str(uuid_variant)
+		var available_cells: Array[Vector2i] = get_parent().dynamically_available_cells(
+			room,
+			true,
+			false,
+			true,
+			uuid
+		)
+		
+		if available_cells.is_empty():
 			return
 		
-		var uuid: String = str(uuid_variant)
-		
-		var selected_cell: Vector2i = available_cells[cell_index]
+		var selected_cell: Vector2i = available_cells[0]
 		var target_cell: Vector2i = get_parent().get_player_room_target_cell(
 			uuid,
 			selected_cell
@@ -418,8 +417,6 @@ func room_selected(
 			ignore_pawns_on_target,
 			PawnTaskLogic.TASK_LOCK_PLAYER
 		)
-		
-		cell_index += 1
 
 
 func pawn_selected(
@@ -530,12 +527,12 @@ func _set_all_rooms_visible(to_visible: bool) -> void:
 	hovered_room_id = room_id_under_mouse
 	
 	for room_id_variant: Variant in room_hover_polygons_by_id.keys():
-		var room_id: int = int(room_id_variant)
+		var hide_room_id: int = int(room_id_variant)
 		
-		if room_id == room_id_under_mouse:
+		if hide_room_id == room_id_under_mouse:
 			continue
 		
-		_set_room_hovered(room_id, false)
+		_set_room_hovered(hide_room_id, false)
 
 func _set_room_hovered(room_id: int, hovered: bool) -> void:
 	_set_room_area_hovered(room_id, hovered)

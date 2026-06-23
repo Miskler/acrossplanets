@@ -336,7 +336,8 @@ static func calculate(
 	rooms: Array,
 	from_cell: Vector2i,
 	to_cell: Vector2i,
-	door_margin_px: float = 10
+	door_margin_px: float = 10,
+	blocked_cells: Dictionary = {}
 ) -> Dictionary:
 	var result: Dictionary = {
 		"valid": true,
@@ -345,7 +346,8 @@ static func calculate(
 		"to_cell": to_cell,
 		"cell_path": [],
 		"points": PackedVector2Array(),
-		"steps": []
+		"steps": [],
+		"door_approaches_by_key": {}
 	}
 
 	if tile_layer == null:
@@ -388,7 +390,13 @@ static func calculate(
 		allowed_floor_cells
 	)
 
-	var astar: AStarGrid2D = _build_astar(tile_layer, path_cells_by_kind)
+	var astar: AStarGrid2D = _build_astar(
+		tile_layer,
+		path_cells_by_kind,
+		blocked_cells,
+		from_cell,
+		to_cell
+	)
 
 	if not astar.is_in_boundsv(from_cell) or not astar.is_in_boundsv(to_cell):
 		result["valid"] = false
@@ -430,6 +438,7 @@ static func calculate(
 	
 	result["steps"] = processed_steps
 	result["points"] = _steps_to_points(processed_steps)
+	result["door_approaches_by_key"] = controls.get("door_approaches_by_key", {})
 	
 	return result
 
@@ -439,7 +448,8 @@ static func calculate_from_global(
 	rooms: Array,
 	from_global_position: Vector2,
 	to_global_position: Vector2,
-	door_margin_px: float = 0.3
+	door_margin_px: float = 0.3,
+	blocked_cells: Dictionary = {}
 ) -> Dictionary:
 	var from_cell: Vector2i = tile_layer.local_to_map(
 		tile_layer.to_local(from_global_position)
@@ -454,7 +464,8 @@ static func calculate_from_global(
 		rooms,
 		from_cell,
 		to_cell,
-		door_margin_px
+		door_margin_px,
+		blocked_cells
 	)
 
 
@@ -540,7 +551,10 @@ static func _get_cell_path_kind(
 
 static func _build_astar(
 	tile_layer: TileMapLayer,
-	path_cells_by_kind: Dictionary
+	path_cells_by_kind: Dictionary,
+	blocked_cells: Dictionary = {},
+	from_cell: Vector2i = Vector2i.ZERO,
+	to_cell: Vector2i = Vector2i.ZERO
 ) -> AStarGrid2D:
 	var astar: AStarGrid2D = AStarGrid2D.new()
 	var used_rect: Rect2i = tile_layer.get_used_rect()
@@ -563,6 +577,9 @@ static func _build_astar(
 			var cell: Vector2i = Vector2i(x, y)
 			var solid: bool = not path_cells_by_kind.has(cell)
 
+			if blocked_cells.has(cell) and cell != from_cell and cell != to_cell:
+				solid = true
+
 			astar.set_point_solid(cell, solid)
 
 	return astar
@@ -575,11 +592,13 @@ static func _build_control_points(
 ) -> Dictionary:
 	var points: PackedVector2Array = PackedVector2Array()
 	var steps: Array[Dictionary] = []
+	var door_approaches_by_key: Dictionary = {}
 
 	if cell_path.is_empty():
 		return {
 			"points": points,
-			"steps": steps
+			"steps": steps,
+			"door_approaches_by_key": door_approaches_by_key
 		}
 
 	var start_cell: Vector2i = cell_path[0]
@@ -639,6 +658,17 @@ static func _build_control_points(
 				door_margin_px
 			)
 
+			var enter_approaches: Array[Dictionary] = _collect_door_side_approaches(
+				tile_layer,
+				door_group,
+				enter_side_cell - first_door_cell,
+				path_cells_by_kind,
+				door_margin_px
+			)
+
+			var enter_door_key: String = _door_cells_key(door_group)
+			door_approaches_by_key[enter_door_key] = enter_approaches
+
 			_append_step(
 				points,
 				steps,
@@ -647,6 +677,7 @@ static func _build_control_points(
 					"cell": first_door_cell,
 					"door_cells": door_group,
 					"from_cell": enter_side_cell,
+					"door_approaches": enter_approaches,
 					"kind": "door_enter",
 					"action": "open_door"
 				}
@@ -711,7 +742,8 @@ static func _build_control_points(
 
 	return {
 		"points": points,
-		"steps": steps
+		"steps": steps,
+		"door_approaches_by_key": door_approaches_by_key
 	}
 
 
@@ -846,6 +878,56 @@ static func _door_group_tile_global_bounds(
 
 	return _points_bounds(all_points)
 	
+
+
+static func _collect_door_side_approaches(
+	tile_layer: TileMapLayer,
+	door_group: Array[Vector2i],
+	side_dir: Vector2i,
+	path_cells_by_kind: Dictionary,
+	door_margin_px: float
+) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	var seen_cells: Dictionary = {}
+
+	if side_dir == Vector2i.ZERO:
+		return result
+
+	for door_cell: Vector2i in door_group:
+		var approach_cell: Vector2i = door_cell + side_dir
+
+		if seen_cells.has(approach_cell):
+			continue
+
+		if int(path_cells_by_kind.get(approach_cell, PathKind.BLOCKED)) != PathKind.FLOOR:
+			continue
+
+		seen_cells[approach_cell] = true
+
+		result.append({
+			"cell": approach_cell,
+			"door_cell": door_cell,
+			"point": _door_group_side_point_global(
+				tile_layer,
+				[door_cell],
+				approach_cell,
+				door_margin_px
+			)
+		})
+
+	return result
+
+
+static func _door_cells_key(door_cells: Array[Vector2i]) -> String:
+	var result: PackedStringArray = []
+
+	for cell: Vector2i in door_cells:
+		result.append("%d:%d" % [cell.x, cell.y])
+
+	result.sort()
+
+	return "|".join(result)
+
 
 static func _append_step(
 	points: PackedVector2Array,

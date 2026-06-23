@@ -9,7 +9,7 @@ signal delete_pawn_event(node, uuid)
 signal room_hp_changed(room_id: int, hp: float)
 signal room_hp_depleted(room_id: int)
 
-@export var pawns2spawn: Array[Dictionary] = [{"race": "human"}, {"race": "human"}, {"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
+@export var pawns2spawn: Array[Dictionary] = [{"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
 
 @onready var foundation_layer = $Foundation
 @onready var stations_layer = $Stations
@@ -79,8 +79,11 @@ var pawn_task_recheck_timer: float = 0.0
 var hull_holes: Dictionary = {}
 var hull_repair_progress: Dictionary = {}
 
-var fortress_doors_level: int = 0
-var fortress_doors_levels_map: Array = [0.7, 0.4, 0.2, 0.1]
+var doors_level: int = 0
+var fortress_doors_levels_map: Array = [0.7, 0.4, 0.2, 0.1] # определяет, с какой вероятностью распространиться огонь
+var health_doors_levels_map: Array = [20, 40, 60, 80] # урон который должна впитать дверь прежде чем открыться
+var cooldown_doors_levels_map: Array = [8, 5, 3, 2] # время в секундах сколько дверь нельзя будет закрыть
+var color_doors_levess_map: Array = [Color.GRAY, Color.BLUE, Color.GOLD, Color.RED]
 
 @export var pawn_battle_enabled: bool = true
 @export var pawn_battle_recheck_interval: float = 0.15
@@ -99,6 +102,10 @@ var pawn_battle_attack_timers: Dictionary = {}
 var room_hp_by_room: Dictionary = {}
 var depleted_room_ids: Dictionary = {}
 
+var door_hp_by_key: Dictionary = {}
+var door_close_cooldowns: Dictionary = {}
+var door_destroy_attack_timers: Dictionary = {}
+
 
 func _ready() -> void:
 	restart()
@@ -109,6 +116,8 @@ func _process(delta: float) -> void:
 	
 	if room_hp_enabled:
 		process_room_hp(delta)
+	
+	_process_door_close_cooldowns(delta)
 	
 	if pawn_environment_damage_enabled:
 		_process_pawn_environment_damage(delta)
@@ -123,6 +132,8 @@ func restart() -> void:
 	rooms = recalc_rooms()
 	setup_oxygen()
 	setup_room_hp()
+	_setup_doors_runtime_state()
+	_apply_door_recolor_shader()
 	
 	hull_holes = HullRepairLogic.collect_hull_holes(foundation_layer)
 	hull_repair_progress = {}
@@ -145,7 +156,7 @@ func add_pawn(race: String, starship: String = starship_uuid) -> bool:
 		return false
 	
 	var pawn = load("res://scenes/pawn.tscn").instantiate()
-	pawn.position = foundation_layer.map_to_local(available_cells[0])
+	pawn.position = _cell_to_pawn_parent_position(available_cells[0])
 	pawns_layer.add_child(pawn)
 	pawn.starship = starship
 	pawn.set_race(race)
@@ -174,20 +185,43 @@ func _on_pawn_action_required(
 	var action: String = step["action"]
 	var door_cells: Array = step["door_cells"]
 	var door_key: String = _door_cells_key(door_cells)
+	var is_hostile: bool = not _pawn_is_friendly_to_ship(pawn_id)
 
 	var task: Dictionary = pawns[pawn_id]["task"]
 
 	if not task.has("opened_doors"):
 		task["opened_doors"] = {}
 
+	if action == "open_door" and is_hostile:
+		var hostile_current_state: String = DoorManager.get_door_state(
+			foundation_layer,
+			door_cells
+		)
+
+		if hostile_current_state == DoorManager.DOOR_STATE_OPEN:
+			_continue_pawn_move_after_action(pawn_id, next_step_index)
+			return
+
+		_start_door_destroy_task_from_movement(
+			pawn_id,
+			step,
+			door_key,
+			next_step_index
+		)
+		return
+
+	if action == "close_door" and is_hostile:
+		_continue_pawn_move_after_action(pawn_id, next_step_index)
+		return
+
 	match action:
 		"open_door":
-			var current_state: String = DoorManager.get_door_state(
+			var current_open_state: String = DoorManager.get_door_state(
 				foundation_layer,
 				door_cells
 			)
 
-			var need_open: bool = current_state != "open"
+			var need_open: bool = current_open_state != DoorManager.DOOR_STATE_OPEN
 
 			if need_open:
 				task["opened_doors"][door_key] = true
@@ -195,42 +229,38 @@ func _on_pawn_action_required(
 				DoorManager.set_door_state(
 					foundation_layer,
 					door_cells,
-					"open"
+					DoorManager.DOOR_STATE_OPEN
 				)
 
 				await get_tree().create_timer(time2change_door_state).timeout
 
 		"close_door":
 			if not task["opened_doors"].has(door_key):
-				pawns[pawn_id]["task"]["next_step_index"] = next_step_index
-				pawns[pawn_id]["node"].move_by_steps_until_action(
-					pawns[pawn_id]["task"]["steps"],
-					next_step_index
-				)
+				_continue_pawn_move_after_action(pawn_id, next_step_index)
 				return
 
-			var current_state: String = DoorManager.get_door_state(
+			if _door_close_is_blocked(door_key):
+				task["opened_doors"].erase(door_key)
+				_continue_pawn_move_after_action(pawn_id, next_step_index)
+				return
+
+			var current_close_state: String = DoorManager.get_door_state(
 				foundation_layer,
 				door_cells
 			)
 
-			if current_state != "closed":
+			if current_close_state != DoorManager.DOOR_STATE_CLOSED:
 				DoorManager.set_door_state(
 					foundation_layer,
 					door_cells,
-					"closed"
+					DoorManager.DOOR_STATE_CLOSED
 				)
 
 				await get_tree().create_timer(time2change_door_state).timeout
 
 			task["opened_doors"].erase(door_key)
 
-	pawns[pawn_id]["task"]["next_step_index"] = next_step_index
-
-	pawns[pawn_id]["node"].move_by_steps_until_action(
-		pawns[pawn_id]["task"]["steps"],
-		next_step_index
-	)
+	_continue_pawn_move_after_action(pawn_id, next_step_index)
 
 func _set_pawn_task_animation(pawn_id: String) -> void:
 	var pawn: Node2D = pawns[pawn_id]["node"]
@@ -252,15 +282,15 @@ func _set_pawn_task_animation(pawn_id: String) -> void:
 			pawn.set_animation(pawn.direction, "station")
 		PawnTaskLogic.TASK_ROOM_DESTROY:
 			pawn.set_animation(pawn.direction, "sabotage")
+		PawnTaskLogic.TASK_DOOR_DESTROY:
+			pawn.set_animation(pawn.direction, _get_door_destroy_animation_name(task))
 
 
 func _get_pawn_task_look_vector(
 	pawn_id: String,
 	task: Dictionary
 ) -> Vector2:
-	var pawn_cell: Vector2i = foundation_layer.local_to_map(
-		pawns[pawn_id]["node"].position
-	)
+	var pawn_cell: Vector2i = _pawn_position_to_foundation_cell(pawn_id)
 
 	var task_type: String = task.get("type", "")
 
@@ -273,6 +303,8 @@ func _get_pawn_task_look_vector(
 			return _get_vector_to_task_target(pawn_cell, task)
 		PawnTaskLogic.TASK_ROOM_DESTROY:
 			return Vector2.UP
+		PawnTaskLogic.TASK_DOOR_DESTROY:
+			return _get_vector_to_door_task(pawn_id, task)
 		PawnTaskLogic.TASK_STATION:
 			var room_id: int = int(task["room_id"])
 			var station_cell: Vector2i = rooms[room_id]["station_cell"]
@@ -307,6 +339,19 @@ func _door_cells_key(door_cells: Array) -> String:
 	result.sort()
 
 	return "|".join(result)
+
+
+func _continue_pawn_move_after_action(
+	pawn_id: String,
+	next_step_index: int
+) -> void:
+	pawns[pawn_id]["task"]["next_step_index"] = next_step_index
+
+	pawns[pawn_id]["node"].move_by_steps_until_action(
+		pawns[pawn_id]["task"]["steps"],
+		next_step_index
+	)
+
 
 func _on_pawn_movement_finished(pawn_id: String) -> void:
 	var movement_task: Dictionary = pawns[pawn_id]["task"]
@@ -452,7 +497,7 @@ func _apply_pawn_environment_damage() -> void:
 		var pawn_data: Dictionary = pawns[pawn_id]
 		var pawn_node: Node2D = pawn_data["node"]
 		
-		var pawn_cell: Vector2i = foundation_layer.local_to_map(pawn_node.position)
+		var pawn_cell: Vector2i = pawn_data["cells"][0]
 		var room_id: int = cell_to_room(pawn_cell)
 		
 		if room_id < 0:
@@ -527,6 +572,7 @@ func process_pawn_tasks(delta: float) -> void:
 	if pawn_battle_enabled:
 		_process_battle_tasks(delta)
 
+	_process_door_destroy_workers(delta)
 	_cleanup_hostile_utility_workers()
 	_interrupt_station_workers_for_room_tasks()
 	_cleanup_finished_tasks()
@@ -561,6 +607,731 @@ func _cleanup_hostile_utility_workers() -> void:
 				_set_pawn_idle(pawn_id)
 			PawnTaskLogic.TASK_STATION:
 				_set_pawn_idle(pawn_id)
+
+func _setup_doors_runtime_state() -> void:
+	door_hp_by_key = {}
+	door_close_cooldowns = {}
+	door_destroy_attack_timers = {}
+
+
+func _apply_door_recolor_shader() -> void:
+	var material: Material = foundation_layer.material
+
+	if material is ShaderMaterial:
+		var shader_material: ShaderMaterial = material as ShaderMaterial
+		shader_material.set_shader_parameter("to_color", _get_current_door_color())
+
+
+func _get_current_door_color() -> Color:
+	return color_doors_levess_map[
+		clampi(doors_level, 0, color_doors_levess_map.size() - 1)
+	]
+
+
+func _get_current_door_max_hp() -> float:
+	return float(health_doors_levels_map[
+		clampi(doors_level, 0, health_doors_levels_map.size() - 1)
+	])
+
+
+func _get_current_door_close_cooldown() -> float:
+	return float(cooldown_doors_levels_map[
+		clampi(doors_level, 0, cooldown_doors_levels_map.size() - 1)
+	])
+
+
+func _door_close_is_blocked(door_key: String) -> bool:
+	return float(door_close_cooldowns.get(door_key, 0.0)) > 0.0
+
+
+func _process_door_close_cooldowns(delta: float) -> void:
+	for door_key: String in door_close_cooldowns.keys():
+		var next_time: float = float(door_close_cooldowns[door_key]) - delta
+
+		if next_time <= 0.0:
+			door_close_cooldowns.erase(door_key)
+			continue
+
+		door_close_cooldowns[door_key] = next_time
+
+
+func request_player_toggle_door(door_cells: Array) -> void:
+	var door_key: String = _door_cells_key(door_cells)
+	var current_state: String = DoorManager.get_door_state(foundation_layer, door_cells)
+	var target_state: String = DoorManager.DOOR_STATE_OPEN
+
+	if current_state == DoorManager.DOOR_STATE_OPEN:
+		target_state = DoorManager.DOOR_STATE_CLOSED
+
+	if target_state == DoorManager.DOOR_STATE_CLOSED and _door_close_is_blocked(door_key):
+		return
+
+	await get_tree().create_timer(time2change_door_state).timeout
+
+	current_state = DoorManager.get_door_state(foundation_layer, door_cells)
+
+	if current_state == target_state:
+		return
+
+	if target_state == DoorManager.DOOR_STATE_CLOSED and _door_close_is_blocked(door_key):
+		return
+
+	DoorManager.set_door_state(
+		foundation_layer,
+		door_cells,
+		target_state
+	)
+
+
+func _get_first_closed_door_step_index(steps: Array[Dictionary]) -> int:
+	for i: int in range(steps.size()):
+		var step: Dictionary = steps[i]
+
+		if step.get("action", "") != "open_door":
+			continue
+
+		var door_cells: Array = step.get("door_cells", [])
+
+		if DoorManager.get_door_state(foundation_layer, door_cells) == DoorManager.DOOR_STATE_CLOSED:
+			return i
+
+	return -1
+
+
+func _start_door_destroy_task_from_movement(
+	pawn_id: String,
+	step: Dictionary,
+	door_key: String,
+	next_step_index: int
+) -> void:
+	var door_source_cell: Vector2i = step["from_cell"]
+
+	_start_door_destroy_task(
+		pawn_id,
+		step,
+		door_key,
+		next_step_index,
+		door_source_cell,
+		door_source_cell
+	)
+
+
+func _start_door_destroy_task_from_planned_movement(
+	pawn_id: String,
+	step: Dictionary,
+	door_key: String,
+	next_step_index: int,
+	pawn_source_cell: Vector2i
+) -> void:
+	var door_source_cell: Vector2i = step["from_cell"]
+
+	_start_door_destroy_task(
+		pawn_id,
+		step,
+		door_key,
+		next_step_index,
+		pawn_source_cell,
+		door_source_cell
+	)
+
+
+func _start_door_destroy_task(
+	pawn_id: String,
+	step: Dictionary,
+	door_key: String,
+	next_step_index: int,
+	pawn_source_cell: Vector2i,
+	door_source_cell: Vector2i
+) -> void:
+	var movement_task: Dictionary = pawns[pawn_id]["task"]
+	var door_cells: Array = step["door_cells"]
+	var assignment: Dictionary = _choose_door_destroy_assignment(
+		pawn_id,
+		step,
+		door_key,
+		pawn_source_cell,
+		door_source_cell
+	)
+
+	var door_task: Dictionary = {
+		"type": PawnTaskLogic.TASK_DOOR_DESTROY,
+		"priority": 2000,
+		"door_cells": door_cells,
+		"door_key": door_key,
+		"target_cell": movement_task["target_cell"],
+		"reserved_target_cell": movement_task["target_cell"],
+		"steps": movement_task["steps"],
+		"next_step_index": next_step_index,
+		"after_move_task": movement_task.get("after_move_task", {}),
+		"lock": PawnTaskLogic.TASK_LOCK_PLAYER,
+		"door_source_cell": door_source_cell,
+		"door_attack_mode": assignment["mode"],
+		"door_attack_cell": assignment["cell"],
+		"door_attack_point": assignment["pawn_position"]
+	}
+
+	if assignment.get("needs_move", false):
+		_move_pawn_to_door_destroy_position(pawn_id, pawn_source_cell, assignment, door_task)
+		return
+
+	pawns[pawn_id]["cells"] = [assignment["cell"]]
+	pawns[pawn_id]["node"].position = assignment["pawn_position"]
+	pawns[pawn_id]["state"] = PawnTaskLogic.STATE_WORKING
+	pawns[pawn_id]["task"] = door_task
+
+	_set_pawn_task_animation(pawn_id)
+
+
+func _choose_door_destroy_assignment(
+	pawn_id: String,
+	step: Dictionary,
+	door_key: String,
+	pawn_source_cell: Vector2i,
+	door_source_cell: Vector2i
+) -> Dictionary:
+	var pawn_node: Node2D = pawns[pawn_id]["node"]
+	var melee_damage: int = int(pawn_node.impact_force)
+	var remote_damage: int = int(pawn_node.impact_force_remotely)
+	var approaches: Array = step.get("door_approaches", [])
+
+	if melee_damage > remote_damage:
+		var melee_assignment: Dictionary = _get_free_door_melee_assignment(
+			pawn_id,
+			door_key,
+			approaches,
+			pawn_source_cell
+		)
+
+		if not melee_assignment.is_empty():
+			return melee_assignment
+
+	var remote_assignment: Dictionary = _get_door_remote_assignment(
+		pawn_id,
+		step,
+		door_key,
+		pawn_source_cell,
+		door_source_cell,
+		approaches
+	)
+
+	if not remote_assignment.is_empty():
+		return remote_assignment
+
+	if melee_damage > 0:
+		var fallback_melee_assignment: Dictionary = _get_free_door_melee_assignment(
+			pawn_id,
+			door_key,
+			approaches,
+			pawn_source_cell
+		)
+
+		if not fallback_melee_assignment.is_empty():
+			return fallback_melee_assignment
+
+	return _get_door_wait_assignment(pawn_id, pawn_source_cell)
+
+
+func _get_free_door_melee_assignment(
+	pawn_id: String,
+	door_key: String,
+	approaches: Array,
+	pawn_source_cell: Vector2i
+) -> Dictionary:
+	for approach_variant: Variant in approaches:
+		var approach: Dictionary = approach_variant
+		var approach_cell: Vector2i = approach["cell"]
+
+		if _door_attack_cell_is_reserved_by_friendly(pawn_id, door_key, approach_cell):
+			continue
+
+		return {
+			"mode": "melee",
+			"cell": approach_cell,
+			"path_point": approach["point"],
+			"pawn_position": _path_point_to_pawn_parent_position(approach["point"]),
+			"needs_move": approach_cell != pawn_source_cell
+		}
+
+	return {}
+
+
+func _get_door_remote_assignment(
+	pawn_id: String,
+	step: Dictionary,
+	door_key: String,
+	pawn_source_cell: Vector2i,
+	door_source_cell: Vector2i,
+	approaches: Array
+) -> Dictionary:
+	# Важно: позицию обстрела выбираем в комнате, из которой путь подходит
+	# именно к ЭТОЙ двери, а не в комнате, где пешка находится сейчас.
+	# Иначе при цепочке дверей ranged-пешка может остаться у прошлой двери
+	# и стрелять через несколько комнат.
+	var room_id: int = cell_to_room(door_source_cell)
+
+	if room_id < 0:
+		return {}
+
+	var available_cells: Array[Vector2i] = dynamically_available_cells(
+		room_id,
+		false,
+		false,
+		true,
+		pawn_id
+	)
+
+	var approach_cells: Dictionary = {}
+
+	for approach_variant: Variant in approaches:
+		var approach: Dictionary = approach_variant
+		approach_cells[approach["cell"]] = true
+
+	var door_center: Vector2 = _get_door_cells_center(step["door_cells"])
+	var best_cell: Vector2i = Vector2i.ZERO
+	var best_distance: float = 1.0e30
+	var found: bool = false
+
+	for cell: Vector2i in available_cells:
+		if approach_cells.has(cell):
+			continue
+
+		var distance: float = foundation_layer.map_to_local(cell).distance_squared_to(door_center)
+
+		if not found or distance < best_distance:
+			found = true
+			best_distance = distance
+			best_cell = cell
+
+	if not found:
+		for cell: Vector2i in available_cells:
+			var fallback_distance: float = foundation_layer.map_to_local(cell).distance_squared_to(door_center)
+
+			if not found or fallback_distance < best_distance:
+				found = true
+				best_distance = fallback_distance
+				best_cell = cell
+
+	if found:
+		var best_path_point: Vector2 = _cell_to_path_point(best_cell)
+
+		return {
+			"mode": "remote",
+			"cell": best_cell,
+			"path_point": best_path_point,
+			"pawn_position": _path_point_to_pawn_parent_position(best_path_point),
+			"needs_move": best_cell != pawn_source_cell
+		}
+
+	# Исключение: комната перед дверью полностью занята.
+	# Дистанционная атака из текущей позиции разрешена только если пешка
+	# УЖЕ находится в комнате перед этой конкретной дверью.
+	# Если она осталась в предыдущей комнате, она может только ждать открытия двери,
+	# но не имеет права наносить ей урон.
+	if cell_to_room(pawn_source_cell) != room_id:
+		return {}
+
+	var current_pawn_position: Vector2 = pawns[pawn_id]["node"].position
+
+	return {
+		"mode": "remote",
+		"cell": pawn_source_cell,
+		"path_point": pawns_layer.to_global(current_pawn_position),
+		"pawn_position": current_pawn_position,
+		"needs_move": false
+	}
+
+
+func _get_door_wait_assignment(
+	pawn_id: String,
+	pawn_source_cell: Vector2i
+) -> Dictionary:
+	var current_pawn_position: Vector2 = pawns[pawn_id]["node"].position
+
+	return {
+		"mode": "wait",
+		"cell": pawn_source_cell,
+		"path_point": pawns_layer.to_global(current_pawn_position),
+		"pawn_position": current_pawn_position,
+		"needs_move": false
+	}
+
+
+func _door_attack_cell_is_reserved_by_friendly(
+	pawn_id: String,
+	door_key: String,
+	cell: Vector2i
+) -> bool:
+	var pawn_starship: String = pawns[pawn_id]["node"].get_current_starship()
+
+	for other_id: String in pawns.keys():
+		if other_id == pawn_id:
+			continue
+
+		if not pawns[other_id]["node"].control_is_available(pawn_starship):
+			continue
+
+		var other: Dictionary = pawns[other_id]
+		var other_task: Dictionary = other["task"]
+
+		if other["state"] == PawnTaskLogic.STATE_WORKING:
+			if other_task.get("type", "") == PawnTaskLogic.TASK_DOOR_DESTROY:
+				if other_task.get("door_key", "") == door_key:
+					if other_task.get("door_attack_cell", Vector2i.ZERO) == cell:
+						return true
+
+		if other["state"] == PawnTaskLogic.STATE_MOVING:
+			var after_move_task: Dictionary = other_task.get("after_move_task", {})
+
+			if after_move_task.get("type", "") == PawnTaskLogic.TASK_DOOR_DESTROY:
+				if after_move_task.get("door_key", "") == door_key:
+					if other_task.get("target_cell", Vector2i.ZERO) == cell:
+						return true
+
+	return false
+
+
+func _move_pawn_to_door_destroy_position(
+	pawn_id: String,
+	pawn_source_cell: Vector2i,
+	assignment: Dictionary,
+	door_task: Dictionary
+) -> void:
+	var attack_cell: Vector2i = assignment["cell"]
+	var attack_path_point: Vector2 = assignment["path_point"]
+	var blocked_cells: Dictionary = _get_blocked_cells_for_pawn_path(pawn_id, attack_cell)
+	var raw_path_data: Dictionary = ShipPathfinder.calculate(
+		foundation_layer,
+		rooms,
+		pawn_source_cell,
+		attack_cell,
+		10,
+		blocked_cells
+	)
+	var path_data: Dictionary = raw_path_data
+
+	var steps: Array[Dictionary] = []
+
+	if path_data["valid"]:
+		steps = path_data["steps"]
+
+		if not steps.is_empty() and steps[0].get("action", "") == "start":
+			steps[0]["point"] = pawns_layer.to_global(pawns[pawn_id]["node"].position)
+	else:
+		# Нельзя превращать ошибку маршрута к позиции обстрела в стрельбу
+		# через несколько комнат. Исключительный ranged-fallback из текущей
+		# клетки разрешен только если пешка уже находится в комнате перед этой дверью.
+		var pawn_source_room_id: int = cell_to_room(pawn_source_cell)
+		var door_source_room_id: int = cell_to_room(door_task["door_source_cell"])
+
+		if pawn_source_room_id != door_source_room_id:
+			push_warning("Door attack position path invalid: " + str(path_data["errors"]))
+			pawns[pawn_id]["cells"] = [pawn_source_cell]
+			_set_pawn_idle(pawn_id)
+			return
+
+		door_task["door_attack_mode"] = "remote"
+		door_task["door_attack_cell"] = pawn_source_cell
+		door_task["door_attack_point"] = pawns[pawn_id]["node"].position
+
+		pawns[pawn_id]["cells"] = [pawn_source_cell]
+		pawns[pawn_id]["state"] = PawnTaskLogic.STATE_WORKING
+		pawns[pawn_id]["task"] = door_task
+
+		_set_pawn_task_animation(pawn_id)
+		return
+
+	if steps.is_empty():
+		steps.append({
+			"cell": pawn_source_cell,
+			"kind": "floor",
+			"action": "start",
+			"point": pawns_layer.to_global(pawns[pawn_id]["node"].position)
+		})
+
+	var last_step: Dictionary = steps[steps.size() - 1]
+
+	if not last_step.has("point") or last_step["point"].distance_to(attack_path_point) > 0.001:
+		steps.append({
+			"cell": attack_cell,
+			"from_cell": attack_cell,
+			"kind": "floor",
+			"action": "move",
+			"point": attack_path_point
+		})
+
+	pawns[pawn_id]["state"] = PawnTaskLogic.STATE_MOVING
+	pawns[pawn_id]["cells"] = [attack_cell]
+	pawns[pawn_id]["task"] = {
+		"steps": steps,
+		"next_step_index": 0,
+		"target_cell": attack_cell,
+		"reserved_target_cell": door_task["reserved_target_cell"],
+		"after_move_task": door_task,
+		"lock": PawnTaskLogic.TASK_LOCK_PLAYER
+	}
+
+	pawns[pawn_id]["node"].move_by_steps_until_action(steps, 0)
+
+
+func _process_door_destroy_workers(delta: float) -> void:
+	for pawn_id: String in pawns.keys():
+		if not pawns.has(pawn_id):
+			continue
+
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != PawnTaskLogic.TASK_DOOR_DESTROY:
+			continue
+
+		var door_cells: Array = task["door_cells"]
+		var door_key: String = task["door_key"]
+
+		pawn["node"].position = task.get("door_attack_point", pawn["node"].position)
+
+		if DoorManager.get_door_state(foundation_layer, door_cells) == DoorManager.DOOR_STATE_OPEN:
+			_resume_pawn_movement_after_destroyed_door(pawn_id)
+			continue
+
+		if not _door_destroy_worker_can_damage(pawn_id, task):
+			door_destroy_attack_timers[pawn_id] = 0.0
+			continue
+
+		var timer: float = float(door_destroy_attack_timers.get(pawn_id, 0.0))
+		timer += delta
+
+		if timer < pawn_battle_damage_interval:
+			door_destroy_attack_timers[pawn_id] = timer
+			continue
+
+		var hits: int = int(timer / pawn_battle_damage_interval)
+		timer -= float(hits) * pawn_battle_damage_interval
+		door_destroy_attack_timers[pawn_id] = timer
+
+		_set_pawn_task_animation(pawn_id)
+
+		for i in range(hits):
+			var damage: int = _get_door_destroy_damage(pawn_id, task)
+
+			if damage <= 0:
+				continue
+
+			if _damage_door(door_key, damage):
+				_break_door(task)
+				_resume_all_pawns_waiting_for_door(door_key)
+				break
+
+
+func _door_destroy_worker_can_damage(
+	pawn_id: String,
+	task: Dictionary
+) -> bool:
+	var mode: String = task.get("door_attack_mode", "remote")
+
+	if mode == "wait":
+		return false
+
+	var door_source_cell: Vector2i = task.get("door_source_cell", Vector2i.ZERO)
+	var door_attack_cell: Vector2i = task.get("door_attack_cell", door_source_cell)
+	var door_source_room_id: int = cell_to_room(door_source_cell)
+
+	if door_source_room_id < 0:
+		return false
+
+	if cell_to_room(door_attack_cell) != door_source_room_id:
+		return false
+
+	if mode == "melee":
+		return int(pawns[pawn_id]["node"].impact_force) > 0
+
+	return int(pawns[pawn_id]["node"].impact_force_remotely) > 0
+
+
+func _get_door_destroy_damage(
+	pawn_id: String,
+	task: Dictionary
+) -> int:
+	if not _door_destroy_worker_can_damage(pawn_id, task):
+		return 0
+
+	if task.get("door_attack_mode", "remote") == "melee":
+		return int(pawns[pawn_id]["node"].impact_force)
+
+	return int(pawns[pawn_id]["node"].impact_force_remotely)
+
+
+func _damage_door(
+	door_key: String,
+	damage: int
+) -> bool:
+	var hp: float = _get_door_hp(door_key)
+	hp = maxf(hp - float(damage), 0.0)
+	door_hp_by_key[door_key] = hp
+
+	return hp <= 0.0
+
+
+func _get_door_hp(door_key: String) -> float:
+	if not door_hp_by_key.has(door_key):
+		door_hp_by_key[door_key] = _get_current_door_max_hp()
+
+	return float(door_hp_by_key[door_key])
+
+
+func _break_door(task: Dictionary) -> void:
+	var door_cells: Array = task["door_cells"]
+	var door_key: String = task["door_key"]
+
+	DoorManager.set_door_state(
+		foundation_layer,
+		door_cells,
+		DoorManager.DOOR_STATE_OPEN
+	)
+
+	door_hp_by_key[door_key] = _get_current_door_max_hp()
+	door_close_cooldowns[door_key] = _get_current_door_close_cooldown()
+
+
+func _resume_all_pawns_waiting_for_door(door_key: String) -> void:
+	var pawn_ids: Array = pawns.keys()
+
+	for pawn_id: String in pawn_ids:
+		if not pawns.has(pawn_id):
+			continue
+
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != PawnTaskLogic.TASK_DOOR_DESTROY:
+			continue
+
+		if task.get("door_key", "") != door_key:
+			continue
+
+		_resume_pawn_movement_after_destroyed_door(pawn_id)
+
+
+func _resume_pawn_movement_after_destroyed_door(pawn_id: String) -> void:
+	var door_task: Dictionary = pawns[pawn_id]["task"]
+	var target_cell: Vector2i = door_task["target_cell"]
+	var after_move_task: Dictionary = door_task.get("after_move_task", {})
+	var attack_cell: Vector2i = door_task.get("door_attack_cell", pawns[pawn_id]["cells"][0])
+
+	door_destroy_attack_timers.erase(pawn_id)
+
+	# После выламывания двери нельзя продолжать старый массив steps с open_door-индекса:
+	# ranged-пешка могла стоять далеко от двери, а старый путь предполагает, что она уже
+	# находится у open_door-точки. Поэтому строим новый маршрут от её фактической
+	# логической клетки атаки к зарезервированной конечной клетке.
+	pawns[pawn_id]["cells"] = [attack_cell]
+	pawns[pawn_id]["node"].position = _cell_to_pawn_parent_position(attack_cell)
+	pawns[pawn_id]["task"] = {}
+
+	pawn_to_cell(
+		pawn_id,
+		target_cell,
+		after_move_task,
+		false,
+		PawnTaskLogic.TASK_LOCK_PLAYER
+	)
+
+func _get_door_destroy_animation_name(task: Dictionary) -> String:
+	var mode: String = task.get("door_attack_mode", "remote")
+
+	if mode == "wait":
+		return "standing"
+
+	if mode == "melee":
+		return "battle"
+
+	return "battle_remotely"
+
+
+func _get_vector_to_door_task(
+	pawn_id: String,
+	task: Dictionary
+) -> Vector2:
+	var pawn_position: Vector2 = pawns[pawn_id]["node"].position
+	var door_position: Vector2 = _get_door_cells_center_pawn_parent(task["door_cells"])
+	var delta: Vector2 = door_position - pawn_position
+
+	if delta.length_squared() <= 0.01:
+		return Vector2.UP
+
+	return delta.normalized()
+
+
+func _get_door_cells_center(door_cells: Array) -> Vector2:
+	var door_position: Vector2 = Vector2.ZERO
+
+	for door_cell: Vector2i in door_cells:
+		door_position += foundation_layer.map_to_local(door_cell)
+
+	return door_position / float(door_cells.size())
+
+
+func _get_door_cells_center_pawn_parent(door_cells: Array) -> Vector2:
+	var door_position: Vector2 = Vector2.ZERO
+
+	for door_cell: Vector2i in door_cells:
+		door_position += _cell_to_pawn_parent_position(door_cell)
+
+	return door_position / float(door_cells.size())
+
+
+func _convert_path_data_points_to_pawn_parent(path_data: Dictionary) -> Dictionary:
+	# ВАЖНО: точки pathfinder-а оставляем в той же системе координат,
+	# в которой их ожидает Pawn.move_by_steps_until_action().
+	# Для прямой записи в pawn.position используется отдельная конвертация
+	# через _path_point_to_pawn_parent_position().
+	return path_data
+
+
+func _steps_to_points_from_steps(steps: Array[Dictionary]) -> PackedVector2Array:
+	var result: PackedVector2Array = PackedVector2Array()
+
+	for step: Dictionary in steps:
+		if not step.has("point"):
+			continue
+
+		result.append(step["point"])
+
+	return result
+
+
+func _cell_to_pawn_parent_position(cell: Vector2i) -> Vector2:
+	return _path_point_to_pawn_parent_position(_cell_to_path_point(cell))
+
+
+func _cell_to_path_point(cell: Vector2i) -> Vector2:
+	return foundation_layer.to_global(
+		foundation_layer.map_to_local(cell)
+	)
+
+
+func _path_point_to_pawn_parent_position(path_point: Vector2) -> Vector2:
+	return pawns_layer.to_local(path_point)
+
+
+func _pawn_position_to_foundation_cell(pawn_id: String) -> Vector2i:
+	var pawn_global_position: Vector2 = pawns_layer.to_global(
+		pawns[pawn_id]["node"].position
+	)
+	var foundation_local_position: Vector2 = foundation_layer.to_local(
+		pawn_global_position
+	)
+
+	return foundation_layer.local_to_map(foundation_local_position)
+
+
 
 func _process_station_workers(delta: float) -> void:
 	for pawn_id: String in pawns.keys():
@@ -631,9 +1402,7 @@ func _start_pawn_work(pawn_id: String, task: Dictionary) -> void:
 
 
 func _start_station_task(pawn_id: String, task: Dictionary) -> void:
-	var pawn_cell: Vector2i = foundation_layer.local_to_map(
-		pawns[pawn_id]["node"].position
-	)
+	var pawn_cell: Vector2i = _pawn_position_to_foundation_cell(pawn_id)
 
 	var target_cell: Vector2i = task["target_cell"]
 
@@ -740,7 +1509,7 @@ func fire_spreading(fire: Node2D) -> void:
 		return
 	
 	var chance: float = fortress_doors_levels_map[
-		clampi(fortress_doors_level, 0, fortress_doors_levels_map.size() - 1)
+		clampi(doors_level, 0, fortress_doors_levels_map.size() - 1)
 	]
 	if randf() > chance:
 		return
@@ -769,27 +1538,31 @@ func pawn_to_cell(
 	var available_cells: Array[Vector2i] = dynamically_available_cells(
 		-1,
 		true,
-		ignore_pawns_on_target
+		ignore_pawns_on_target,
+		true,
+		pawn_id
 	)
 
 	if not target_cell in available_cells:
 		push_warning("Target cell for moving not available: " + str(target_cell))
 		return
 
-	var source_cell: Vector2i = foundation_layer.local_to_map(
-		pawns[pawn_id]["node"].position
-	)
-	pawns[pawn_id]["node"].position = foundation_layer.map_to_local(source_cell)
+	var source_cell: Vector2i = _pawn_position_to_foundation_cell(pawn_id)
+	pawns[pawn_id]["node"].position = _cell_to_pawn_parent_position(source_cell)
 
 	pawns[pawn_id]["cells"] = [target_cell]
 	pawns[pawn_id]["state"] = PawnTaskLogic.STATE_MOVING
 
-	var path_data: Dictionary = ShipPathfinder.calculate(
+	var blocked_cells: Dictionary = _get_blocked_cells_for_pawn_path(pawn_id, target_cell)
+	var raw_path_data: Dictionary = ShipPathfinder.calculate(
 		foundation_layer,
 		rooms,
 		source_cell,
-		target_cell
+		target_cell,
+		10,
+		blocked_cells
 	)
+	var path_data: Dictionary = raw_path_data
 
 	if not path_data["valid"]:
 		push_warning("Path invalid: " + str(path_data["errors"]))
@@ -797,7 +1570,7 @@ func pawn_to_cell(
 		_set_pawn_idle(pawn_id)
 		return
 
-	pawns[pawn_id]["task"] = {
+	var movement_task: Dictionary = {
 		"steps": path_data["steps"],
 		"next_step_index": 0,
 		"target_cell": target_cell,
@@ -805,10 +1578,29 @@ func pawn_to_cell(
 		"lock": task_lock
 	}
 
+	pawns[pawn_id]["task"] = movement_task
+
+	if not _pawn_is_friendly_to_ship(pawn_id):
+		var first_closed_door_step_index: int = _get_first_closed_door_step_index(path_data["steps"])
+
+		if first_closed_door_step_index >= 0:
+			var door_step: Dictionary = path_data["steps"][first_closed_door_step_index]
+			var door_key: String = _door_cells_key(door_step["door_cells"])
+
+			_start_door_destroy_task_from_planned_movement(
+				pawn_id,
+				door_step,
+				door_key,
+				first_closed_door_step_index + 1,
+				source_cell
+			)
+			return
+
 	pawns[pawn_id]["node"].move_by_steps_until_action(
 		path_data["steps"],
 		0
 	)
+
 
 func _set_pawn_idle(pawn_id: String) -> void:
 	if not pawns.has(pawn_id):
@@ -819,6 +1611,9 @@ func _set_pawn_idle(pawn_id: String) -> void:
 
 	if pawn_battle_attack_timers.has(pawn_id):
 		pawn_battle_attack_timers.erase(pawn_id)
+
+	if door_destroy_attack_timers.has(pawn_id):
+		door_destroy_attack_timers.erase(pawn_id)
 
 	_reset_pawn_visual_position(pawn_id)
 
@@ -834,17 +1629,64 @@ func cell_to_room(cell: Vector2i) -> int:
 	
 	return -1
 
+func _get_pawn_reserved_cells_for_availability(pawn_id: String) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+
+	for cell: Vector2i in pawns[pawn_id]["cells"]:
+		result.append(cell)
+
+	var task: Dictionary = pawns[pawn_id]["task"]
+
+	if task.has("reserved_target_cell"):
+		var reserved_cell: Vector2i = task["reserved_target_cell"]
+
+		if not reserved_cell in result:
+			result.append(reserved_cell)
+
+	return result
+
+
+func _get_blocked_cells_for_pawn_path(
+	pawn_id: String,
+	allowed_target_cell: Vector2i
+) -> Dictionary:
+	# Пешки не являются стенами для pathfinder-а.
+	# Они запрещают только ВЫБОР конечной/рабочей клетки через
+	# dynamically_available_cells() и _door_attack_cell_is_reserved_by_friendly(),
+	# но маршрут может проходить через клетки союзников.
+	# Иначе после выламывания двери один союзник в узком проходе может сделать
+	# зарезервированную цель формально недостижимой, хотя по игровой логике
+	# пешки должны разойтись/пройти сквозь занятые логические клетки.
+	return {}
+
+
 func dynamically_available_cells(
 	room_id: int = -1,
 	main_floor_priority: bool = true,
 	ignore_pawns: bool = false,
-	ignore_fires: bool = true
+	ignore_fires: bool = true,
+	pawn_id: String = ""
 ) -> Array[Vector2i]:
 	var exclude_cells: Dictionary = {}
+
 	if not ignore_pawns:
-		for pawn in pawns.values():
-			for cell: Vector2i in pawn["cells"]:
-				exclude_cells[cell] = true
+		if pawn_id == "":
+			for other_id: String in pawns.keys():
+				for cell: Vector2i in _get_pawn_reserved_cells_for_availability(other_id):
+					exclude_cells[cell] = true
+		else:
+			var pawn_starship: String = pawns[pawn_id]["node"].get_current_starship()
+
+			for other_id: String in pawns.keys():
+				if other_id == pawn_id:
+					continue
+
+				if not pawns[other_id]["node"].control_is_available(pawn_starship):
+					continue
+
+				for cell: Vector2i in _get_pawn_reserved_cells_for_availability(other_id):
+					exclude_cells[cell] = true
+
 	if not ignore_fires:
 		for fire_cell in fires.keys():
 			exclude_cells[fire_cell] = true
@@ -868,6 +1710,7 @@ func dynamically_available_cells(
 			available_cells.append(cell)
 	
 	return available_cells
+
 
 func _get_battle_animation_name(
 	pawn_id: String,
@@ -1089,11 +1932,12 @@ func _cell_has_friendly_pawn(
 		if not pawns[other_id]["node"].control_is_available(pawn_starship):
 			continue
 
-		for other_cell: Vector2i in pawns[other_id]["cells"]:
+		for other_cell: Vector2i in _get_pawn_reserved_cells_for_availability(other_id):
 			if other_cell == cell:
 				return true
 
 	return false
+
 
 func _apply_battle_damage(delta: float) -> void:
 	var pawn_ids: Array = pawns.keys()
@@ -1236,6 +2080,7 @@ func _on_pawn_dead(pawn_id: String) -> void:
 		pawn_battle_attack_timers.erase(other_id)
 
 	pawn_battle_attack_timers.erase(pawn_id)
+	door_destroy_attack_timers.erase(pawn_id)
 
 	emit_signal("delete_pawn_event", pawn_node, pawn_id)
 
@@ -1318,9 +2163,7 @@ func _friendly_pawn_already_approaches_battle_target(
 				continue
 
 			if other_task.get("target_pawn_id", "") == target_pawn_id:
-				var other_cell: Vector2i = foundation_layer.local_to_map(
-					other["node"].position
-				)
+				var other_cell: Vector2i = _pawn_position_to_foundation_cell(other_id)
 
 				if other_cell == target_cell:
 					return true
@@ -1442,6 +2285,16 @@ func _update_battle_visual_offsets() -> void:
 		if pawns[pawn_id]["state"] == PawnTaskLogic.STATE_MOVING:
 			continue
 
+		var visual_task: Dictionary = pawns[pawn_id]["task"]
+
+		if pawns[pawn_id]["state"] == PawnTaskLogic.STATE_WORKING:
+			if visual_task.get("type", "") == PawnTaskLogic.TASK_DOOR_DESTROY:
+				pawns[pawn_id]["node"].position = visual_task.get(
+					"door_attack_point",
+					pawns[pawn_id]["node"].position
+				)
+				continue
+
 		_reset_pawn_visual_position(pawn_id)
 
 func _interrupt_station_workers_for_room_tasks() -> bool:
@@ -1542,9 +2395,7 @@ func _get_room_damage_by_room() -> Dictionary:
 		if task.get("type", "") != PawnTaskLogic.TASK_ROOM_DESTROY:
 			continue
 		
-		var pawn_cell: Vector2i = foundation_layer.local_to_map(
-			pawn["node"].position
-		)
+		var pawn_cell: Vector2i = _pawn_position_to_foundation_cell(pawn_id)
 		var current_room_id: int = cell_to_room(pawn_cell)
 		var task_room_id: int = int(task["room_id"])
 		

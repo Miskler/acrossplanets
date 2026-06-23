@@ -6,6 +6,7 @@ const TASK_HULL_REPAIR: String = "hull_repair"
 const TASK_STATION: String = "station"
 const TASK_BATTLE: String = "battle"
 const TASK_ROOM_DESTROY: String = "room_destroy"
+const TASK_DOOR_DESTROY: String = "door_destroy"
 
 const TASK_LOCK_AUTO: String = "auto"
 const TASK_LOCK_PLAYER: String = "player"
