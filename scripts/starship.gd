@@ -9,7 +9,7 @@ signal delete_pawn_event(node, uuid)
 signal room_hp_changed(room_id: int, hp: float)
 signal room_hp_depleted(room_id: int)
 
-@export var pawns2spawn: Array[Dictionary] = [{"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
+@export var pawns2spawn: Array[Dictionary] = [{"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
 
 @onready var foundation_layer = $Foundation
 @onready var stations_layer = $Stations
@@ -106,6 +106,30 @@ var door_hp_by_key: Dictionary = {}
 var door_close_cooldowns: Dictionary = {}
 var door_destroy_attack_timers: Dictionary = {}
 
+@export var door_hp_visual_enabled: bool = true
+@export var door_hp_visual_min_period: float = 0.12
+@export var door_hp_visual_max_period: float = 0.85
+@export var door_hp_visual_max_alpha: float = 0.55
+@export var door_hp_visual_speed_smoothing: float = 8.0
+
+@export var room_station_hp_visual_enabled: bool = true
+@export var room_station_hp_visual_min_period: float = 0.12
+@export var room_station_hp_visual_max_period: float = 0.85
+@export var room_station_hp_visual_max_alpha: float = 0.55
+@export var room_station_hp_visual_speed_smoothing: float = 8.0
+
+var door_hp_visual_time: float = 0.0
+var door_cells_by_key: Dictionary = {}
+var door_hp_visuals_by_key: Dictionary = {}
+var door_hp_visual_phases_by_key: Dictionary = {}
+var door_hp_visual_frequencies_by_key: Dictionary = {}
+var door_hp_visual_layer: Node2D
+var active_door_attack_keys_this_tick: Dictionary = {}
+
+var room_station_hp_visual_layers_by_room: Dictionary = {}
+var room_station_hp_visual_phases_by_room: Dictionary = {}
+var room_station_hp_visual_frequencies_by_room: Dictionary = {}
+
 
 func _ready() -> void:
 	restart()
@@ -116,8 +140,10 @@ func _process(delta: float) -> void:
 	
 	if room_hp_enabled:
 		process_room_hp(delta)
+		_process_room_station_hp_visuals(delta)
 	
 	_process_door_close_cooldowns(delta)
+	_process_door_hp_visuals(delta)
 	
 	if pawn_environment_damage_enabled:
 		_process_pawn_environment_damage(delta)
@@ -573,6 +599,8 @@ func process_pawn_tasks(delta: float) -> void:
 		_process_battle_tasks(delta)
 
 	_process_door_destroy_workers(delta)
+	_restore_idle_door_hp()
+	active_door_attack_keys_this_tick = {}
 	_cleanup_hostile_utility_workers()
 	_interrupt_station_workers_for_room_tasks()
 	_cleanup_finished_tasks()
@@ -612,6 +640,147 @@ func _setup_doors_runtime_state() -> void:
 	door_hp_by_key = {}
 	door_close_cooldowns = {}
 	door_destroy_attack_timers = {}
+	door_cells_by_key = {}
+	active_door_attack_keys_this_tick = {}
+	door_hp_visual_time = 0.0
+	door_hp_visual_phases_by_key = {}
+	door_hp_visual_frequencies_by_key = {}
+	_ensure_door_hp_visual_layer()
+	_clear_door_hp_visuals()
+
+
+func _ensure_door_hp_visual_layer() -> void:
+	if is_instance_valid(door_hp_visual_layer):
+		return
+
+	door_hp_visual_layer = Node2D.new()
+	door_hp_visual_layer.name = "DoorHpVisualLayer"
+	door_hp_visual_layer.z_index = 1000
+	door_hp_visual_layer.z_as_relative = false
+	foundation_layer.add_child(door_hp_visual_layer)
+
+
+func _clear_door_hp_visuals() -> void:
+	if is_instance_valid(door_hp_visual_layer):
+		for child: Node in door_hp_visual_layer.get_children():
+			child.queue_free()
+
+	door_hp_visuals_by_key = {}
+	door_hp_visual_phases_by_key = {}
+	door_hp_visual_frequencies_by_key = {}
+
+
+func _remember_door_cells(door_key: String, door_cells: Array) -> void:
+	var stored_cells: Array[Vector2i] = []
+
+	for cell_variant: Variant in door_cells:
+		stored_cells.append(cell_variant)
+
+	door_cells_by_key[door_key] = stored_cells
+
+
+func _remove_door_hp_visual(door_key: String) -> void:
+	if door_hp_visuals_by_key.has(door_key):
+		for visual_variant: Variant in door_hp_visuals_by_key[door_key]:
+			var visual: Node = visual_variant
+
+			if is_instance_valid(visual):
+				visual.queue_free()
+
+		door_hp_visuals_by_key.erase(door_key)
+
+	door_hp_visual_phases_by_key.erase(door_key)
+	door_hp_visual_frequencies_by_key.erase(door_key)
+
+
+func _ensure_door_hp_visual(door_key: String) -> void:
+	if door_hp_visuals_by_key.has(door_key):
+		return
+
+	if not door_cells_by_key.has(door_key):
+		return
+
+	_ensure_door_hp_visual_layer()
+
+	var tile_size: Vector2 = Vector2(foundation_layer.tile_set.tile_size)
+	var half_size: Vector2 = tile_size * 0.5
+	var visuals: Array[Polygon2D] = []
+
+	for cell: Vector2i in door_cells_by_key[door_key]:
+		var visual: Polygon2D = Polygon2D.new()
+		visual.name = "DoorHpVisual_" + str(cell.x) + "_" + str(cell.y)
+		visual.position = foundation_layer.map_to_local(cell)
+		visual.polygon = PackedVector2Array([
+			Vector2(-half_size.x, -half_size.y),
+			Vector2(half_size.x, -half_size.y),
+			Vector2(half_size.x, half_size.y),
+			Vector2(-half_size.x, half_size.y)
+		])
+		visual.color = Color(0.0, 0.0, 0.0, 0.0)
+		visual.z_index = 1000
+		visual.z_as_relative = false
+		door_hp_visual_layer.add_child(visual)
+		visuals.append(visual)
+
+	door_hp_visuals_by_key[door_key] = visuals
+	door_hp_visual_phases_by_key[door_key] = 0.0
+	door_hp_visual_frequencies_by_key[door_key] = 1.0 / door_hp_visual_max_period
+
+
+func _process_door_hp_visuals(delta: float) -> void:
+	if not door_hp_visual_enabled:
+		_clear_door_hp_visuals()
+		return
+
+	door_hp_visual_time += delta
+
+	for door_key: String in door_hp_by_key.keys():
+		var max_hp: float = _get_current_door_max_hp()
+		var hp: float = clampf(float(door_hp_by_key[door_key]), 0.0, max_hp)
+
+		if hp >= max_hp:
+			_remove_door_hp_visual(door_key)
+			continue
+
+		if not door_cells_by_key.has(door_key):
+			_remove_door_hp_visual(door_key)
+			continue
+
+		var door_cells: Array = door_cells_by_key[door_key]
+
+		if DoorManager.get_door_state(foundation_layer, door_cells) == DoorManager.DOOR_STATE_OPEN:
+			_remove_door_hp_visual(door_key)
+			continue
+
+		_ensure_door_hp_visual(door_key)
+
+		if not door_hp_visuals_by_key.has(door_key):
+			continue
+
+		var hp_ratio: float = clampf(hp / max_hp, 0.0, 1.0)
+		var damage_ratio: float = 1.0 - hp_ratio
+		var period: float = lerpf(door_hp_visual_min_period, door_hp_visual_max_period, hp_ratio)
+		var target_frequency: float = 1.0 / period
+		var current_frequency: float = float(door_hp_visual_frequencies_by_key.get(door_key, target_frequency))
+		current_frequency = lerpf(
+			current_frequency,
+			target_frequency,
+			clampf(delta * door_hp_visual_speed_smoothing, 0.0, 1.0)
+		)
+		door_hp_visual_frequencies_by_key[door_key] = current_frequency
+
+		var phase: float = float(door_hp_visual_phases_by_key.get(door_key, 0.0))
+		phase = fmod(phase + delta * current_frequency, 1.0)
+		door_hp_visual_phases_by_key[door_key] = phase
+
+		var pulse: float = (1.0 - cos(phase * TAU)) * 0.5
+		var alpha: float = pulse * door_hp_visual_max_alpha * clampf(0.35 + damage_ratio * 0.65, 0.0, 1.0)
+
+		for visual_variant: Variant in door_hp_visuals_by_key[door_key]:
+			var visual: Polygon2D = visual_variant
+
+			if is_instance_valid(visual):
+				visual.color = Color(0.0, 0.0, 0.0, alpha)
 
 
 func _apply_door_recolor_shader() -> void:
@@ -745,6 +914,7 @@ func _start_door_destroy_task(
 ) -> void:
 	var movement_task: Dictionary = pawns[pawn_id]["task"]
 	var door_cells: Array = step["door_cells"]
+	_remember_door_cells(door_key, door_cells)
 	var assignment: Dictionary = _choose_door_destroy_assignment(
 		pawn_id,
 		step,
@@ -1101,6 +1271,8 @@ func _process_door_destroy_workers(delta: float) -> void:
 			door_destroy_attack_timers[pawn_id] = 0.0
 			continue
 
+		active_door_attack_keys_this_tick[door_key] = true
+
 		var timer: float = float(door_destroy_attack_timers.get(pawn_id, 0.0))
 		timer += delta
 
@@ -1171,8 +1343,37 @@ func _damage_door(
 	var hp: float = _get_door_hp(door_key)
 	hp = maxf(hp - float(damage), 0.0)
 	door_hp_by_key[door_key] = hp
+	_ensure_door_hp_visual(door_key)
 
 	return hp <= 0.0
+
+
+func _restore_idle_door_hp() -> void:
+	var max_hp: float = _get_current_door_max_hp()
+
+	for door_key: String in door_hp_by_key.keys():
+		if active_door_attack_keys_this_tick.has(door_key):
+			continue
+
+		var hp: float = float(door_hp_by_key[door_key])
+
+		if hp >= max_hp:
+			continue
+
+		if not door_cells_by_key.has(door_key):
+			door_hp_by_key[door_key] = max_hp
+			_remove_door_hp_visual(door_key)
+			continue
+
+		var door_cells: Array = door_cells_by_key[door_key]
+
+		if DoorManager.get_door_state(foundation_layer, door_cells) == DoorManager.DOOR_STATE_OPEN:
+			door_hp_by_key[door_key] = max_hp
+			_remove_door_hp_visual(door_key)
+			continue
+
+		door_hp_by_key[door_key] = max_hp
+		_remove_door_hp_visual(door_key)
 
 
 func _get_door_hp(door_key: String) -> float:
@@ -1193,6 +1394,8 @@ func _break_door(task: Dictionary) -> void:
 	)
 
 	door_hp_by_key[door_key] = _get_current_door_max_hp()
+	_remove_door_hp_visual(door_key)
+	door_cells_by_key.erase(door_key)
 	door_close_cooldowns[door_key] = _get_current_door_close_cooldown()
 
 
@@ -2342,9 +2545,126 @@ func _room_has_hull_hole(room_id: int) -> bool:
 func setup_room_hp() -> void:
 	room_hp_by_room = {}
 	depleted_room_ids = {}
+	_setup_room_station_hp_visuals()
 	
 	for room_id: int in range(rooms.size()):
 		room_hp_by_room[room_id] = room_hp_max
+
+
+func _setup_room_station_hp_visuals() -> void:
+	_clear_room_station_hp_visuals()
+	room_station_hp_visual_phases_by_room = {}
+	room_station_hp_visual_frequencies_by_room = {}
+
+
+func _clear_room_station_hp_visuals() -> void:
+	for layer_variant: Variant in room_station_hp_visual_layers_by_room.values():
+		var layer: Node = layer_variant
+
+		if is_instance_valid(layer):
+			layer.queue_free()
+
+	room_station_hp_visual_layers_by_room = {}
+
+
+func _remove_room_station_hp_visual(room_id: int) -> void:
+	if room_station_hp_visual_layers_by_room.has(room_id):
+		var layer: Node = room_station_hp_visual_layers_by_room[room_id]
+
+		if is_instance_valid(layer):
+			layer.queue_free()
+
+		room_station_hp_visual_layers_by_room.erase(room_id)
+
+	room_station_hp_visual_phases_by_room.erase(room_id)
+	room_station_hp_visual_frequencies_by_room.erase(room_id)
+
+
+func _ensure_room_station_hp_visual(room_id: int) -> void:
+	if room_station_hp_visual_layers_by_room.has(room_id):
+		return
+
+	var layer: TileMapLayer = TileMapLayer.new()
+	layer.name = "RoomStationHpVisual_" + str(room_id)
+	layer.tile_set = stations_layer.tile_set
+	layer.position = Vector2.ZERO
+	layer.z_index = 1
+	layer.z_as_relative = true
+	layer.modulate = Color(0.0, 0.0, 0.0, 0.0)
+
+	var has_tiles: bool = false
+
+	for cell: Vector2i in rooms[room_id]["cells"]:
+		var source_id: int = stations_layer.get_cell_source_id(cell)
+
+		if source_id < 0:
+			continue
+
+		layer.set_cell(
+			cell,
+			source_id,
+			stations_layer.get_cell_atlas_coords(cell),
+			stations_layer.get_cell_alternative_tile(cell)
+		)
+		has_tiles = true
+
+	if not has_tiles:
+		layer.queue_free()
+		return
+
+	stations_layer.add_child(layer)
+	room_station_hp_visual_layers_by_room[room_id] = layer
+	room_station_hp_visual_phases_by_room[room_id] = 0.0
+	room_station_hp_visual_frequencies_by_room[room_id] = 1.0 / room_station_hp_visual_max_period
+
+
+func _process_room_station_hp_visuals(delta: float) -> void:
+	if not room_station_hp_visual_enabled:
+		_clear_room_station_hp_visuals()
+		return
+
+	for room_id: int in range(rooms.size()):
+		var hp: float = clampf(float(room_hp_by_room.get(room_id, room_hp_max)), 0.0, room_hp_max)
+
+		if hp >= room_hp_max:
+			_remove_room_station_hp_visual(room_id)
+			continue
+
+		_ensure_room_station_hp_visual(room_id)
+
+		if not room_station_hp_visual_layers_by_room.has(room_id):
+			continue
+
+		var hp_ratio: float = clampf(hp / room_hp_max, 0.0, 1.0)
+		var damage_ratio: float = 1.0 - hp_ratio
+		var period: float = lerpf(
+			room_station_hp_visual_min_period,
+			room_station_hp_visual_max_period,
+			hp_ratio
+		)
+		var target_frequency: float = 1.0 / period
+		var current_frequency: float = float(
+			room_station_hp_visual_frequencies_by_room.get(room_id, target_frequency)
+		)
+		current_frequency = lerpf(
+			current_frequency,
+			target_frequency,
+			clampf(delta * room_station_hp_visual_speed_smoothing, 0.0, 1.0)
+		)
+		room_station_hp_visual_frequencies_by_room[room_id] = current_frequency
+
+		var phase: float = float(room_station_hp_visual_phases_by_room.get(room_id, 0.0))
+		phase = fmod(phase + delta * current_frequency, 1.0)
+		room_station_hp_visual_phases_by_room[room_id] = phase
+
+		var pulse: float = (1.0 - cos(phase * TAU)) * 0.5
+		var alpha: float = pulse * room_station_hp_visual_max_alpha * clampf(
+			0.35 + damage_ratio * 0.65,
+			0.0,
+			1.0
+		)
+		var layer: CanvasItem = room_station_hp_visual_layers_by_room[room_id]
+		layer.modulate = Color(0.0, 0.0, 0.0, alpha)
 
 
 func process_room_hp(delta: float) -> void:
