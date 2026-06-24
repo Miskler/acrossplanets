@@ -9,11 +9,12 @@ signal delete_pawn_event(node, uuid)
 signal room_hp_changed(room_id: int, hp: float)
 signal room_hp_depleted(room_id: int)
 
-@export var pawns2spawn: Array[Dictionary] = [{"race": "human"}, {"race": "human"}, {"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
+@export var pawns2spawn: Array[Dictionary] = [{"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
 
 @onready var foundation_layer = $Foundation
 @onready var stations_layer = $Stations
 @onready var technical_layer = $Technical
+@onready var door_block_layer = $Technical
 @onready var icons_layer = $Icons
 @onready var pawns_layer = $Pawns
 @onready var fire_layer = $Fire
@@ -72,7 +73,7 @@ var pawn_environment_damage_timer: float = 0.0
 
 @export var pawn_task_enabled: bool = true
 @export var pawn_task_recheck_interval: float = 0.25
-@export var hull_repair_seconds_per_step: float = 4.0
+@export var hull_repair_engineering_per_step: float = 100.0
 
 var pawn_task_recheck_timer: float = 0.0
 
@@ -97,7 +98,6 @@ var pawn_battle_attack_timers: Dictionary = {}
 @export var room_hp_enabled: bool = true
 @export var room_hp_max: float = 100.0
 @export var room_fire_damage_per_second: float = 8.0
-@export var room_hostile_pawn_damage_per_second: float = 4.0
 
 var room_hp_by_room: Dictionary = {}
 var depleted_room_ids: Dictionary = {}
@@ -105,6 +105,8 @@ var depleted_room_ids: Dictionary = {}
 var door_hp_by_key: Dictionary = {}
 var door_close_cooldowns: Dictionary = {}
 var door_destroy_attack_timers: Dictionary = {}
+
+var door_block_scene: PackedScene = preload("res://scenes/door_block.tscn")
 
 @export var door_hp_visual_enabled: bool = true
 @export var door_hp_visual_min_period: float = 0.12
@@ -134,7 +136,6 @@ var room_station_hp_visual_frequencies_by_room: Dictionary = {}
 @export var room_integrity_max_default: int = 3
 @export var room_fortitude_max: float = 100.0
 @export var room_repair_fortitude_extra: float = 40.0
-@export var room_repair_per_worker_second: float = 25.0
 @export var room_default_unlocked_power: int = -1
 
 var room_integrity_by_room: Dictionary = {}
@@ -562,13 +563,13 @@ func _apply_pawn_environment_damage() -> void:
 		var damage_value: float = 0.0
 		
 		if room_oxygen < pawn_node.min_oxygen:
-			damage_value += float(pawn_no_oxygen_damage) * pawn_node.no_oxygen_damage_factor
+			damage_value += float(pawn_no_oxygen_damage) * _get_pawn_no_oxygen_damage_factor(pawn_id)
 		
 		if room_oxygen > pawn_node.max_oxygen:
-			damage_value += float(pawn_no_oxygen_damage) * pawn_node.no_oxygen_damage_factor
+			damage_value += float(pawn_no_oxygen_damage) * _get_pawn_no_oxygen_damage_factor(pawn_id)
 		
 		if fire_rooms.has(room_id):
-			damage_value += float(pawn_fire_room_damage) * pawn_node.fire_room_damage_factor
+			damage_value += float(pawn_fire_room_damage) * _get_pawn_fire_room_damage_factor(pawn_id)
 		
 		var final_damage: int = roundi(damage_value)
 		
@@ -989,9 +990,8 @@ func _choose_door_destroy_assignment(
 	pawn_source_cell: Vector2i,
 	door_source_cell: Vector2i
 ) -> Dictionary:
-	var pawn_node: Node2D = pawns[pawn_id]["node"]
-	var melee_damage: int = int(pawn_node.impact_force)
-	var remote_damage: int = int(pawn_node.impact_force_remotely)
+	var melee_damage: int = _get_pawn_impact_force(pawn_id)
+	var remote_damage: int = _get_pawn_impact_force_remotely(pawn_id)
 	var approaches: Array = step.get("door_approaches", [])
 
 	if melee_damage > remote_damage:
@@ -1348,9 +1348,9 @@ func _door_destroy_worker_can_damage(
 		return false
 
 	if mode == "melee":
-		return int(pawns[pawn_id]["node"].impact_force) > 0
+		return _get_pawn_impact_force(pawn_id) > 0
 
-	return int(pawns[pawn_id]["node"].impact_force_remotely) > 0
+	return _get_pawn_impact_force_remotely(pawn_id) > 0
 
 
 func _get_door_destroy_damage(
@@ -1361,9 +1361,9 @@ func _get_door_destroy_damage(
 		return 0
 
 	if task.get("door_attack_mode", "remote") == "melee":
-		return int(pawns[pawn_id]["node"].impact_force)
+		return _get_pawn_impact_force(pawn_id)
 
-	return int(pawns[pawn_id]["node"].impact_force_remotely)
+	return _get_pawn_impact_force_remotely(pawn_id)
 
 
 func _damage_door(
@@ -1423,10 +1423,19 @@ func _break_door(task: Dictionary) -> void:
 		DoorManager.DOOR_STATE_OPEN
 	)
 
+	_spawn_door_block_visual(door_cells)
+
 	door_hp_by_key[door_key] = _get_current_door_max_hp()
 	_remove_door_hp_visual(door_key)
 	door_cells_by_key.erase(door_key)
 	door_close_cooldowns[door_key] = _get_current_door_close_cooldown()
+
+
+func _spawn_door_block_visual(door_cells: Array) -> void:
+	var door_block: Node2D = door_block_scene.instantiate()
+	door_block.position = _get_door_cells_center(door_cells)
+	foundation_layer.add_child(door_block)
+	door_block.anim(_get_current_door_close_cooldown())
 
 
 func _resume_all_pawns_waiting_for_door(door_key: String) -> void:
@@ -1681,19 +1690,17 @@ func _apply_fire_workers() -> void:
 
 
 func _process_hull_repair_workers(delta: float) -> void:
-	var workers_by_hole: Dictionary = PawnTaskLogic.count_workers_by_target(
-		pawns,
-		PawnTaskLogic.TASK_HULL_REPAIR,
-		starship_uuid
+	var engineering_by_hole: Dictionary = _count_engineering_workers_by_target(
+		PawnTaskLogic.TASK_HULL_REPAIR
 	)
 
 	var finished_cells: Array[Vector2i] = HullRepairLogic.process_hull_repair(
 		foundation_layer,
 		hull_holes,
 		hull_repair_progress,
-		workers_by_hole,
+		engineering_by_hole,
 		delta,
-		hull_repair_seconds_per_step
+		hull_repair_engineering_per_step
 	)
 
 	for finished_cell: Vector2i in finished_cells:
@@ -1702,6 +1709,33 @@ func _process_hull_repair_workers(delta: float) -> void:
 			finished_cell
 		)
 
+
+func _count_engineering_workers_by_target(task_type: String) -> Dictionary:
+	var result: Dictionary = {}
+
+	for pawn_id: String in pawns.keys():
+		if not _pawn_is_friendly_to_ship(pawn_id):
+			continue
+
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != task_type:
+			continue
+
+		var target_cell: Vector2i = task["target_cell"]
+		var engineering: int = _get_pawn_impact_engineering(pawn_id)
+
+		if engineering <= 0:
+			continue
+
+		result[target_cell] = int(result.get(target_cell, 0)) + engineering
+
+	return result
 
 func _finish_workers_on_target(
 	task_type: String,
@@ -2017,10 +2051,8 @@ func get_player_room_target_cell(
 	if room_id < 0:
 		return selected_cell
 
-	var pawn_node: Node2D = pawns[pawn_id]["node"]
-
-	var melee_damage: int = int(pawn_node.impact_force)
-	var remote_damage: int = int(pawn_node.impact_force_remotely)
+	var melee_damage: int = _get_pawn_impact_force(pawn_id)
+	var remote_damage: int = _get_pawn_impact_force_remotely(pawn_id)
 
 	if melee_damage <= remote_damage:
 		return selected_cell
@@ -2232,7 +2264,7 @@ func _apply_battle_damage(delta: float) -> void:
 			if base_damage <= 0:
 				continue
 
-			var damage_value: float = float(base_damage) * target.battle_damage_factor
+			var damage_value: float = float(base_damage) * _get_pawn_battle_damage_factor(target_pawn_id)
 			var final_damage: int = roundi(damage_value)
 
 			if final_damage > 0:
@@ -2244,9 +2276,9 @@ func _get_battle_damage_value(
 	target_pawn_id: String
 ) -> int:
 	if _battle_is_melee(pawn_id, target_pawn_id):
-		return int(pawns[pawn_id]["node"].impact_force)
+		return _get_pawn_impact_force(pawn_id)
 
-	return int(pawns[pawn_id]["node"].impact_force_remotely)
+	return _get_pawn_impact_force_remotely(pawn_id)
 
 
 func _battle_is_melee(
@@ -2329,6 +2361,38 @@ func _on_pawn_dead(pawn_id: String) -> void:
 	pawns.erase(pawn_id)
 	pawn_node.queue_free()
 
+func _get_pawn_impact_engineering(pawn_id: String) -> int:
+	return maxi(0, int(pawns[pawn_id]["node"].get_impact_engineering()))
+
+
+func _get_pawn_impact_force(pawn_id: String) -> int:
+	return int(pawns[pawn_id]["node"].get_impact_force())
+
+
+func _get_pawn_impact_force_remotely(pawn_id: String) -> int:
+	return int(pawns[pawn_id]["node"].get_impact_force_remotely())
+
+
+func _get_pawn_move_speed_px(pawn_id: String) -> float:
+	return float(pawns[pawn_id]["node"].get_move_speed_px())
+
+
+func _get_pawn_oxygen_consumption(pawn_id: String) -> float:
+	return float(pawns[pawn_id]["node"].get_oxygen_consumption())
+
+
+func _get_pawn_no_oxygen_damage_factor(pawn_id: String) -> float:
+	return float(pawns[pawn_id]["node"].get_no_oxygen_damage_factor())
+
+
+func _get_pawn_fire_room_damage_factor(pawn_id: String) -> float:
+	return float(pawns[pawn_id]["node"].get_fire_room_damage_factor())
+
+
+func _get_pawn_battle_damage_factor(pawn_id: String) -> float:
+	return float(pawns[pawn_id]["node"].get_battle_damage_factor())
+
+
 func _pawn_has_player_lock(pawn_id: String) -> bool:
 	if not pawns.has(pawn_id):
 		return false
@@ -2341,11 +2405,8 @@ func _get_battle_pair_approacher(
 	pawn_id: String,
 	target_pawn_id: String
 ) -> String:
-	var pawn_node: Node2D = pawns[pawn_id]["node"]
-	var target_node: Node2D = pawns[target_pawn_id]["node"]
-
-	var pawn_melee_gain: int = int(pawn_node.impact_force) - int(pawn_node.impact_force_remotely)
-	var target_melee_gain: int = int(target_node.impact_force) - int(target_node.impact_force_remotely)
+	var pawn_melee_gain: int = _get_pawn_impact_force(pawn_id) - _get_pawn_impact_force_remotely(pawn_id)
+	var target_melee_gain: int = _get_pawn_impact_force(target_pawn_id) - _get_pawn_impact_force_remotely(target_pawn_id)
 
 	if pawn_melee_gain <= 0 and target_melee_gain <= 0:
 		return ""
@@ -2755,6 +2816,7 @@ func _ensure_room_station_hp_visual(room_id: int) -> void:
 	layer.name = "RoomStationHpVisual_" + str(room_id)
 	layer.tile_set = stations_layer.tile_set
 	layer.position = Vector2.ZERO
+	layer.z_index = 1
 	layer.z_as_relative = true
 	layer.modulate = Color(0.0, 0.0, 0.0, 0.0)
 
@@ -2935,7 +2997,7 @@ func _get_room_fortitude_damage_by_room() -> Dictionary:
 			continue
 
 		room_sabotage_pawn_room_by_id[pawn_id] = task_room_id
-		_add_room_damage(result, task_room_id, room_hostile_pawn_damage_per_second)
+		_add_room_damage(result, task_room_id, float(_get_pawn_impact_engineering(pawn_id)))
 
 	return result
 
@@ -2966,7 +3028,7 @@ func _get_room_fortitude_repair_by_room() -> Dictionary:
 		if not _room_needs_repair(task_room_id):
 			continue
 
-		result[task_room_id] = float(result.get(task_room_id, 0.0)) + room_repair_per_worker_second
+		result[task_room_id] = float(result.get(task_room_id, 0.0)) + float(_get_pawn_impact_engineering(pawn_id))
 
 	return result
 

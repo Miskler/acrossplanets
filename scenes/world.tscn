@@ -55,6 +55,8 @@ script = ExtResource("18_pm21f")
 [node name="Icons" type="Node2D" parent="TileWorld" unique_id=1567160823]
 script = ExtResource("9_w7kh3")
 
+[node name="DoorBlock" type="Node2D" parent="TileWorld" unique_id=114867834]
+
 [node name="Node" type="Node2D" parent="." unique_id=1654736266 node_paths=PackedStringArray("starship")]
 visible = false
 position = Vector2(308, 361)

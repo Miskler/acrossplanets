@@ -1,0 +1,38 @@
+[gd_scene format=3 uid="uid://cpuf7nh5d28cu"]
+
+[ext_resource type="Texture2D" uid="uid://cyyief5m6qit3" path="res://assets/door_block/hand.png" id="1_hleld"]
+[ext_resource type="Script" uid="uid://cnuxj3jo7774n" path="res://scripts/door_block.gd" id="1_pdq1g"]
+[ext_resource type="Texture2D" uid="uid://dpugc3rg7vr1g" path="res://assets/door_block/cross.png" id="2_hxuhe"]
+[ext_resource type="Texture2D" uid="uid://52as0hpdxb12" path="res://assets/door_block/check.png" id="3_48ykw"]
+
+[node name="DoorBlock" type="Node2D" unique_id=1384488375]
+script = ExtResource("1_pdq1g")
+
+[node name="Hand" type="TextureRect" parent="." unique_id=857118459]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("1_hleld")
+expand_mode = 1
+
+[node name="Block" type="TextureRect" parent="." unique_id=304618666]
+offset_left = -15.0
+offset_top = -15.0
+offset_right = 15.0
+offset_bottom = 15.0
+texture = ExtResource("2_hxuhe")
+expand_mode = 1
+
+[node name="Check" type="TextureRect" parent="." unique_id=582171765]
+offset_left = -16.0
+offset_top = -16.0
+offset_right = 15.0
+offset_bottom = 15.0
+texture = ExtResource("3_48ykw")
+expand_mode = 1

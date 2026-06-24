@@ -51,7 +51,7 @@ static func add_pawn_consumption(
 		
 		consumption_by_room[room_index] = (
 			float(consumption_by_room[room_index])
-			+ pawn_node.oxygen_consumption
+			+ pawn_node.get_oxygen_consumption()
 		)
 
 

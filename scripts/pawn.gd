@@ -20,10 +20,11 @@ var no_oxygen_damage_factor: float = 1
 var fire_room_damage_factor: float = 1
 var battle_damage_factor: float = 1
 
-var impact_force: int = 3
-var impact_force_remotely: int = 3
-var move_speed_px: float = 80.0
-var oxygen_consumption: float = 2.0
+var impact_engineering: int = 3 # заплатка пробоин, ремонт станций и их саботаж
+var impact_force: int = 3 # сила удара вблизи
+var impact_force_remotely: int = 3 # сила удара вдали
+var move_speed_px: float = 80.0 # скорость передвижения
+var oxygen_consumption: float = 2.0 # потребления кислорода (можно поставить выработку если <0)
 var point_reach_distance_px: float = 1.0
 
 # Логика следующая:
@@ -74,6 +75,8 @@ func set_race(new_race: String):
 		"human":
 			move_speed_px = 80
 			oxygen_consumption = 20
+			
+			impact_engineering = 3
 			impact_force = 3
 			impact_force_remotely = 2
 			
@@ -212,3 +215,30 @@ func update_direction_by_vector(move_vector: Vector2) -> void:
 		direction = "down"
 
 	set_animation(direction, "moving")
+
+
+# геттеры (тут происходит подсчет фактических значений с учетом навыков)
+
+func get_impact_engineering() -> int:
+	return impact_engineering
+
+func get_impact_force() -> int:
+	return impact_force
+
+func get_impact_force_remotely() -> int:
+	return impact_force_remotely
+
+func get_move_speed_px() -> float:
+	return move_speed_px
+
+func get_oxygen_consumption() -> float:
+	return oxygen_consumption
+
+func get_no_oxygen_damage_factor() -> float:
+	return no_oxygen_damage_factor
+
+func get_fire_room_damage_factor() -> float:
+	return fire_room_damage_factor
+
+func get_battle_damage_factor() -> float:
+	return battle_damage_factor
