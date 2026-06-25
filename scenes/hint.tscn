@@ -1,0 +1,805 @@
+[gd_scene format=3 uid="uid://c67h1i15e8jv0"]
+
+[ext_resource type="Texture2D" uid="uid://bdce8cundv0rq" path="res://assets/icons/hint/heart.png" id="1_grpcu"]
+[ext_resource type="Texture2D" uid="uid://dhm23ifg2w00k" path="res://assets/icons/hint/crack.png" id="2_eevai"]
+[ext_resource type="Texture2D" uid="uid://bd3scdxowqlis" path="res://assets/icons/hint/oxygen.png" id="2_w3r4f"]
+[ext_resource type="Texture2D" uid="uid://domrhmrxqgq27" path="res://assets/icons/hint/fire.png" id="3_l02gy"]
+[ext_resource type="Texture2D" uid="uid://j6nbrf8kpyxu" path="res://assets/icons/hint/door.png" id="5_acx8x"]
+[ext_resource type="Texture2D" uid="uid://fwrcidcgt7jm" path="res://assets/icons/hint/human.png" id="6_nws1o"]
+[ext_resource type="Texture2D" uid="uid://ded6dom4ttygt" path="res://assets/icons/hint/starship.png" id="7_1v1av"]
+[ext_resource type="Texture2D" uid="uid://clskg70w0x73r" path="res://assets/icons/hint/level.png" id="8_l02gy"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fket2"]
+bg_color = Color(1, 1, 1, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hcxlo"]
+bg_color = Color(0, 1, 0, 1)
+
+[sub_resource type="Theme" id="Theme_ry3e3"]
+ProgressBar/styles/background = SubResource("StyleBoxFlat_fket2")
+ProgressBar/styles/fill = SubResource("StyleBoxFlat_hcxlo")
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_eevai"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_l02gy"]
+bg_color = Color(1, 0, 0, 1)
+
+[sub_resource type="Theme" id="Theme_acx8x"]
+ProgressBar/styles/background = SubResource("StyleBoxEmpty_eevai")
+ProgressBar/styles/fill = SubResource("StyleBoxFlat_l02gy")
+
+[node name="Hint" type="Control" unique_id=983738499]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = -969.0
+offset_bottom = -505.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background" type="ColorRect" parent="." unique_id=1473130384]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 1)
+
+[node name="Title" type="Label" parent="." unique_id=1731933413]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 0.19900002
+offset_left = 3.0
+offset_top = 2.0
+offset_right = -2.0
+offset_bottom = -3.2580013
+text = "Майкл бъётся"
+
+[node name="Room" type="Control" parent="." unique_id=648700190]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Lines" type="Control" parent="Room" unique_id=275493509]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ColorRect" type="ColorRect" parent="Room/Lines" unique_id=2062340199]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+offset_top = 27.0
+offset_bottom = 30.0
+
+[node name="ColorRect2" type="ColorRect" parent="Room/Lines" unique_id=133729039]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -58.0
+offset_top = 27.0
+offset_right = -54.432007
+
+[node name="RightBox" type="VBoxContainer" parent="Room" unique_id=1587217157]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -56.0
+offset_top = 33.0
+offset_bottom = 92.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Heart" type="Control" parent="Room/RightBox" unique_id=1094296029]
+custom_minimum_size = Vector2(0, 25)
+layout_mode = 2
+
+[node name="Logo" type="TextureRect" parent="Room/RightBox/Heart" unique_id=1379738751]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_top = -2.0
+offset_right = 32.0
+offset_bottom = -2.0
+grow_vertical = 2
+texture = ExtResource("1_grpcu")
+expand_mode = 2
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="Room/RightBox/Heart" unique_id=1339491665]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 27.0
+offset_top = -2.0
+offset_right = -1.0
+offset_bottom = -2.0
+grow_horizontal = 0
+grow_vertical = 2
+text = "1|2"
+vertical_alignment = 1
+
+[node name="Healing" type="ProgressBar" parent="Room/RightBox/Heart" unique_id=708831892]
+layout_mode = 0
+offset_left = 5.0
+offset_top = 23.0
+offset_right = 54.0
+offset_bottom = 27.0
+theme = SubResource("Theme_ry3e3")
+value = 12.89
+show_percentage = false
+
+[node name="Damage" type="ProgressBar" parent="Room/RightBox/Heart" unique_id=1095677532]
+layout_mode = 0
+offset_left = 54.0
+offset_top = 27.0
+offset_right = 103.0
+offset_bottom = 31.0
+rotation = 3.1415927
+theme = SubResource("Theme_acx8x")
+value = 12.89
+show_percentage = false
+
+[node name="ColorRect" type="ColorRect" parent="Room/RightBox" unique_id=203167560]
+custom_minimum_size = Vector2(0, 4)
+layout_mode = 2
+
+[node name="Cracks" type="Control" parent="Room/RightBox" unique_id=1183096217]
+custom_minimum_size = Vector2(0, 25)
+layout_mode = 2
+
+[node name="Logo" type="TextureRect" parent="Room/RightBox/Cracks" unique_id=1769639400]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 32.0
+grow_vertical = 2
+texture = ExtResource("2_eevai")
+expand_mode = 2
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="Room/RightBox/Cracks" unique_id=241035323]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 30.000008
+grow_horizontal = 0
+grow_vertical = 2
+text = "2"
+vertical_alignment = 1
+
+[node name="ColorRect2" type="ColorRect" parent="Room/RightBox" unique_id=1280694938]
+custom_minimum_size = Vector2(0, 4)
+layout_mode = 2
+
+[node name="Fire" type="Control" parent="Room/RightBox" unique_id=1228483582]
+custom_minimum_size = Vector2(0, 25)
+layout_mode = 2
+
+[node name="Logo" type="TextureRect" parent="Room/RightBox/Fire" unique_id=1498455556]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 32.0
+grow_vertical = 2
+texture = ExtResource("3_l02gy")
+expand_mode = 2
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="Room/RightBox/Fire" unique_id=1431063170]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 30.000008
+grow_horizontal = 0
+grow_vertical = 2
+text = "2"
+vertical_alignment = 1
+
+[node name="Grid" type="Control" parent="Room" unique_id=1735370392]
+layout_mode = 1
+anchor_top = 0.22100002
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -0.06200409
+offset_right = -59.0
+
+[node name="Header" type="Control" parent="Room/Grid" unique_id=805988897]
+layout_mode = 1
+anchor_top = -0.28300002
+anchor_bottom = -0.28300002
+offset_left = 3.0
+offset_top = 30.352518
+offset_right = 129.0
+offset_bottom = 55.352516
+
+[node name="Logo" type="TextureRect" parent="Room/Grid/Header" unique_id=692960507]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 25.0
+grow_vertical = 2
+texture = ExtResource("2_w3r4f")
+expand_mode = 2
+stretch_mode = 4
+
+[node name="Label" type="Label" parent="Room/Grid/Header" unique_id=1674596555]
+layout_mode = 0
+offset_left = 25.0
+offset_right = 113.0
+offset_bottom = 25.0
+text = "100%"
+
+[node name="ColorRect" type="ColorRect" parent="Room/Grid" unique_id=1042926325]
+layout_mode = 1
+anchors_preset = -1
+anchor_top = -0.28300002
+anchor_right = 1.0
+anchor_bottom = -0.28300002
+offset_left = 3.0
+offset_top = 55.795128
+offset_right = -2.0
+offset_bottom = 57.795128
+color = Color(0.601223, 0.601223, 0.60122293, 1)
+
+[node name="GridContainer" type="GridContainer" parent="Room/Grid" unique_id=861465590]
+layout_mode = 1
+anchors_preset = -1
+anchor_top = -0.28300002
+anchor_right = 1.008
+anchor_bottom = 1.0
+offset_left = 3.0
+offset_top = 62.001915
+offset_right = -3.0400085
+offset_bottom = -30.999985
+grow_vertical = 0
+columns = 2
+
+[node name="Control" type="Control" parent="Room/Grid/GridContainer" unique_id=397618515]
+custom_minimum_size = Vector2(0, 23)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Control" type="Control" parent="Room/Grid/GridContainer/Control" unique_id=1931861238]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 22.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/Control/Control" unique_id=273079410]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 22.0
+grow_vertical = 2
+texture = ExtResource("5_acx8x")
+expand_mode = 2
+
+[node name="Label" type="Label" parent="Room/Grid/GridContainer/Control/Control" unique_id=114279252]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.386
+anchor_top = -0.023000002
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -0.0020008087
+offset_top = 0.006000042
+offset_bottom = 0.5
+grow_horizontal = 0
+grow_vertical = 2
+text = "-12"
+vertical_alignment = 1
+
+[node name="Control2" type="Control" parent="Room/Grid/GridContainer" unique_id=1322033411]
+custom_minimum_size = Vector2(0, 23)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Control" type="Control" parent="Room/Grid/GridContainer/Control2" unique_id=599041186]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 22.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/Control2/Control" unique_id=698130792]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 22.0
+grow_vertical = 2
+texture = ExtResource("6_nws1o")
+expand_mode = 2
+
+[node name="Label" type="Label" parent="Room/Grid/GridContainer/Control2/Control" unique_id=1516920114]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.386
+anchor_top = -0.023000002
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -0.0020008087
+offset_top = 0.006000042
+offset_bottom = 0.5
+grow_horizontal = 0
+grow_vertical = 2
+text = "-12"
+vertical_alignment = 1
+
+[node name="Control3" type="Control" parent="Room/Grid/GridContainer" unique_id=172247529]
+custom_minimum_size = Vector2(0, 23)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Control" type="Control" parent="Room/Grid/GridContainer/Control3" unique_id=2061408093]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 22.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/Control3/Control" unique_id=2017787290]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 22.0
+grow_vertical = 2
+texture = ExtResource("7_1v1av")
+expand_mode = 2
+
+[node name="Label" type="Label" parent="Room/Grid/GridContainer/Control3/Control" unique_id=1697723317]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.386
+anchor_top = -0.023000002
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -0.0020008087
+offset_top = 0.006000042
+offset_bottom = 0.5
+grow_horizontal = 0
+grow_vertical = 2
+text = "-12"
+vertical_alignment = 1
+
+[node name="Control4" type="Control" parent="Room/Grid/GridContainer" unique_id=1861021406]
+custom_minimum_size = Vector2(0, 23)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Control" type="Control" parent="Room/Grid/GridContainer/Control4" unique_id=346294883]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 22.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/Control4/Control" unique_id=330564080]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 22.0
+grow_vertical = 2
+texture = ExtResource("3_l02gy")
+expand_mode = 2
+
+[node name="Label" type="Label" parent="Room/Grid/GridContainer/Control4/Control" unique_id=1063785]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.386
+anchor_top = -0.023000002
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -0.0020008087
+offset_top = 0.006000042
+offset_bottom = 0.5
+grow_horizontal = 0
+grow_vertical = 2
+text = "-12"
+vertical_alignment = 1
+
+[node name="ColorRect2" type="ColorRect" parent="Room/Grid" unique_id=2064504050]
+layout_mode = 1
+anchors_preset = -1
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 3.0
+offset_top = -25.0
+offset_right = -2.0
+offset_bottom = -23.0
+color = Color(0.601223, 0.601223, 0.60122293, 1)
+
+[node name="Total" type="Label" parent="Room/Grid" unique_id=1977187323]
+layout_mode = 1
+anchors_preset = -1
+anchor_top = 1.0
+anchor_right = 1.008
+anchor_bottom = 1.0
+offset_left = 3.0
+offset_top = -25.0
+offset_right = -3.0400085
+offset_bottom = -2.0
+grow_horizontal = 2
+grow_vertical = 0
+text = "-18 +14 = -4/сек"
+
+[node name="Door" type="Control" parent="." unique_id=481479237]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Lines" type="Control" parent="Door" unique_id=811790691]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ColorRect" type="ColorRect" parent="Door/Lines" unique_id=1219881461]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 27.0
+offset_bottom = 30.0
+
+[node name="ColorRect2" type="ColorRect" parent="Door/Lines" unique_id=1190214602]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.48900002
+anchor_right = 0.48900002
+anchor_bottom = 1.0
+offset_left = -1.4600067
+offset_top = 27.0
+offset_right = 1.5399933
+grow_vertical = 2
+
+[node name="Cracks" type="Control" parent="Door" unique_id=712490737]
+custom_minimum_size = Vector2(0, 25)
+layout_mode = 1
+anchor_left = 0.23500001
+anchor_right = 0.23500001
+offset_left = -25.840004
+offset_top = 33.0
+offset_right = 23.196
+offset_bottom = 58.0
+
+[node name="Logo" type="TextureRect" parent="Door/Cracks" unique_id=1012150015]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 32.0
+grow_vertical = 2
+texture = ExtResource("8_l02gy")
+expand_mode = 2
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="Door/Cracks" unique_id=418854130]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 30.000008
+grow_horizontal = 0
+grow_vertical = 2
+text = "2"
+vertical_alignment = 1
+
+[node name="Heart" type="Control" parent="Door" unique_id=1250324400]
+custom_minimum_size = Vector2(0, 25)
+layout_mode = 1
+anchor_left = 0.776
+anchor_right = 0.776
+offset_left = -36.260002
+offset_top = 33.0
+offset_right = 22.239998
+offset_bottom = 58.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="Door/Heart" unique_id=356412102]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_top = -2.0
+offset_right = 32.0
+offset_bottom = -2.0
+grow_vertical = 2
+texture = ExtResource("1_grpcu")
+expand_mode = 2
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="Door/Heart" unique_id=1701921242]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 27.0
+offset_top = -2.0
+offset_right = -1.0
+offset_bottom = -2.0
+grow_horizontal = 0
+grow_vertical = 2
+text = "1|2"
+vertical_alignment = 1
+
+[node name="Healing" type="ProgressBar" parent="Door/Heart" unique_id=81831864]
+layout_mode = 0
+offset_left = 5.0
+offset_top = 23.0
+offset_right = 54.0
+offset_bottom = 27.0
+theme = SubResource("Theme_ry3e3")
+show_percentage = false
+
+[node name="Damage" type="ProgressBar" parent="Door/Heart" unique_id=1410057471]
+layout_mode = 0
+offset_left = 54.0
+offset_top = 27.0
+offset_right = 103.0
+offset_bottom = 31.0
+rotation = 3.1415927
+theme = SubResource("Theme_acx8x")
+value = 3.13
+show_percentage = false
+
+[node name="Pawn" type="Control" parent="." unique_id=418602729]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Lines" type="Control" parent="Pawn" unique_id=2134270535]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ColorRect" type="ColorRect" parent="Pawn/Lines" unique_id=1961028017]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 27.0
+offset_bottom = 30.0
+
+[node name="GridContainer" type="GridContainer" parent="Pawn" unique_id=255814385]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 3.0
+offset_top = 62.0
+offset_right = -1.5200043
+offset_bottom = -2.0
+grow_vertical = 0
+columns = 2
+
+[node name="Control" type="Control" parent="Pawn/GridContainer" unique_id=252792253]
+custom_minimum_size = Vector2(0, 23)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Control" type="Control" parent="Pawn/GridContainer/Control" unique_id=1795775895]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 22.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="Pawn/GridContainer/Control/Control" unique_id=1601543354]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 22.0
+grow_vertical = 2
+texture = ExtResource("5_acx8x")
+expand_mode = 2
+
+[node name="Label" type="Label" parent="Pawn/GridContainer/Control/Control" unique_id=2111120812]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.386
+anchor_top = -0.023000002
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -0.0020008087
+offset_top = 0.006000042
+offset_bottom = 0.5
+grow_horizontal = 0
+grow_vertical = 2
+text = "-12"
+vertical_alignment = 1
+
+[node name="Control2" type="Control" parent="Pawn/GridContainer" unique_id=311908363]
+custom_minimum_size = Vector2(0, 23)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Control" type="Control" parent="Pawn/GridContainer/Control2" unique_id=1600502048]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 22.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="Pawn/GridContainer/Control2/Control" unique_id=1738942669]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 22.0
+grow_vertical = 2
+texture = ExtResource("6_nws1o")
+expand_mode = 2
+
+[node name="Label" type="Label" parent="Pawn/GridContainer/Control2/Control" unique_id=119424150]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.386
+anchor_top = -0.023000002
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -0.0020008087
+offset_top = 0.006000042
+offset_bottom = 0.5
+grow_horizontal = 0
+grow_vertical = 2
+text = "-12"
+vertical_alignment = 1
+
+[node name="Control3" type="Control" parent="Pawn/GridContainer" unique_id=1390945960]
+custom_minimum_size = Vector2(0, 23)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Control" type="Control" parent="Pawn/GridContainer/Control3" unique_id=1145385761]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 22.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="Pawn/GridContainer/Control3/Control" unique_id=912365975]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 22.0
+grow_vertical = 2
+texture = ExtResource("7_1v1av")
+expand_mode = 2
+
+[node name="Label" type="Label" parent="Pawn/GridContainer/Control3/Control" unique_id=1424935841]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.386
+anchor_top = -0.023000002
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -0.0020008087
+offset_top = 0.006000042
+offset_bottom = 0.5
+grow_horizontal = 0
+grow_vertical = 2
+text = "-12"
+vertical_alignment = 1
+
+[node name="Control4" type="Control" parent="Pawn/GridContainer" unique_id=2092912634]
+custom_minimum_size = Vector2(0, 23)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Control" type="Control" parent="Pawn/GridContainer/Control4" unique_id=131447935]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 22.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="Pawn/GridContainer/Control4/Control" unique_id=876056522]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 22.0
+grow_vertical = 2
+texture = ExtResource("3_l02gy")
+expand_mode = 2
+
+[node name="Label" type="Label" parent="Pawn/GridContainer/Control4/Control" unique_id=1890901292]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.386
+anchor_top = -0.023000002
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -0.0020008087
+offset_top = 0.006000042
+offset_bottom = 0.5
+grow_horizontal = 0
+grow_vertical = 2
+text = "-12"
+vertical_alignment = 1
+
+[node name="Header" type="Control" parent="Pawn" unique_id=1702638988]
+layout_mode = 1
+offset_left = 3.0
+offset_top = 33.0
+offset_right = 129.0
+offset_bottom = 58.0
+
+[node name="Logo" type="TextureRect" parent="Pawn/Header" unique_id=1705036100]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 25.0
+grow_vertical = 2
+texture = ExtResource("1_grpcu")
+expand_mode = 2
+stretch_mode = 4
+
+[node name="Label" type="Label" parent="Pawn/Header" unique_id=1410197228]
+layout_mode = 0
+offset_left = 25.0
+offset_right = 113.0
+offset_bottom = 25.0
+text = "87"
+
+[node name="ColorRect" type="ColorRect" parent="Pawn" unique_id=1431126539]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+offset_left = 3.0
+offset_top = 58.0
+offset_right = -4.0
+offset_bottom = 60.0
+color = Color(0.601223, 0.601223, 0.60122293, 1)
+
+[node name="ColorRect2" type="ColorRect" parent="Pawn" unique_id=1574851493]
+layout_mode = 1
+anchors_preset = -1
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 2.0
+offset_top = -28.0
+offset_right = -5.0
+offset_bottom = -26.0
+color = Color(0.601223, 0.601223, 0.60122293, 1)
+
+[node name="Total" type="Label" parent="Pawn" unique_id=202668043]
+layout_mode = 1
+anchors_preset = -1
+anchor_top = 1.0
+anchor_right = 1.008
+anchor_bottom = 1.0
+offset_left = 3.0
+offset_top = -25.0
+offset_right = -3.0400085
+offset_bottom = -2.0
+grow_horizontal = 2
+grow_vertical = 0
+text = "-18 +14 = -4/сек"

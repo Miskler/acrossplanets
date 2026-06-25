@@ -1,9 +1,9 @@
 [gd_scene format=3 uid="uid://cpuf7nh5d28cu"]
 
-[ext_resource type="Texture2D" uid="uid://cyyief5m6qit3" path="res://assets/door_block/hand.png" id="1_hleld"]
+[ext_resource type="Texture2D" uid="uid://cyyief5m6qit3" path="res://assets/icons/door_block/hand.png" id="1_hleld"]
 [ext_resource type="Script" uid="uid://cnuxj3jo7774n" path="res://scripts/door_block.gd" id="1_pdq1g"]
-[ext_resource type="Texture2D" uid="uid://dpugc3rg7vr1g" path="res://assets/door_block/cross.png" id="2_hxuhe"]
-[ext_resource type="Texture2D" uid="uid://52as0hpdxb12" path="res://assets/door_block/check.png" id="3_48ykw"]
+[ext_resource type="Texture2D" uid="uid://dpugc3rg7vr1g" path="res://assets/icons/door_block/cross.png" id="2_hxuhe"]
+[ext_resource type="Texture2D" uid="uid://52as0hpdxb12" path="res://assets/icons/door_block/check.png" id="3_48ykw"]
 
 [node name="DoorBlock" type="Node2D" unique_id=1384488375]
 script = ExtResource("1_pdq1g")

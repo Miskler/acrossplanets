@@ -754,3 +754,455 @@ func _set_room_hover_hole_position(gposition: Vector2) -> void:
 		func() -> void:
 			room_hover_hole_position_tween = null
 	)
+
+
+func get_info_at_global_position(global_position: Vector2) -> Dictionary:
+	var hits: Array[Dictionary] = _get_info_hits_at_global_position(global_position)
+	
+	for hit: Dictionary in hits:
+		var collider: Object = hit.get("collider", null)
+		
+		if collider == null:
+			continue
+		
+		if collider.is_in_group("pawn"):
+			return {
+				"type": "pawn",
+				"info": get_pawn_info(str(collider.get_meta("uuid")))
+			}
+	
+	for hit: Dictionary in hits:
+		var collider: Object = hit.get("collider", null)
+		
+		if collider == null:
+			continue
+		
+		if collider.is_in_group("door"):
+			return {
+				"type": "door",
+				"info": get_door_info(collider.get_meta("door_cells"))
+			}
+	
+	for hit: Dictionary in hits:
+		var collider: Object = hit.get("collider", null)
+		
+		if collider == null:
+			continue
+		
+		if collider.is_in_group("room"):
+			return {
+				"type": "room",
+				"info": get_room_info(int(collider.get_meta("room")))
+			}
+	
+	return {}
+
+
+func get_pawn_info(pawn_id: String) -> Dictionary:
+	var starship: Node = get_parent()
+	var pawn_data: Dictionary = starship.pawns[pawn_id]
+	var pawn_node: Node2D = pawn_data["node"]
+	
+	return {
+		"health": int(pawn_node.health),
+		"current_task": _get_pawn_current_task_name(pawn_id),
+		"health_balance": {
+			"income": {
+				"aid_station": _get_pawn_aid_station_health_income(pawn_id)
+			},
+			"loss": {
+				"fire": _get_pawn_fire_health_loss(pawn_id),
+				"pawns": _get_pawn_battle_health_loss(pawn_id),
+				"oxygen": _get_pawn_oxygen_health_loss(pawn_id)
+			}
+		}
+	}
+
+
+func get_door_info(door_cells: Array) -> Dictionary:
+	var starship: Node = get_parent()
+	var door_key: String = _info_door_cells_key(door_cells)
+	var max_hp: float = _get_current_door_max_hp_for_info()
+	var fortress: float = float(starship.door_hp_by_key.get(door_key, max_hp))
+	var is_open: bool = DoorManager.get_door_state(
+		starship.foundation_layer,
+		door_cells
+	) == DoorManager.DOOR_STATE_OPEN
+	
+	return {
+		"level": int(starship.doors_level),
+		"fortress": fortress,
+		"open": is_open
+	}
+
+
+func get_room_info(room_id: int) -> Dictionary:
+	var starship: Node = get_parent()
+	var oxygen_balance: Dictionary = _get_room_oxygen_balance(room_id)
+	
+	return {
+		"oxygen": float(starship.oxygen_by_room.get(room_id, 0.0)),
+		"holes": _get_room_holes_count(room_id),
+		"fires": _get_room_fires_count(room_id),
+		"health": {
+			"current": int(starship.room_integrity_by_room.get(room_id, 0)),
+			"maximum": int(starship.room_integrity_max_by_room.get(room_id, starship.room_integrity_max_default)),
+			"fortress": float(starship.room_fortitude_by_room.get(room_id, starship.room_fortitude_max)),
+			"energy": int(starship.room_current_power_by_room.get(room_id, 0))
+		},
+		"oxygen_balance": oxygen_balance
+	}
+
+
+func _get_info_hits_at_global_position(global_position: Vector2) -> Array[Dictionary]:
+	under_mouse.position = global_position
+	return get_world_2d().direct_space_state.intersect_point(under_mouse)
+
+
+func _get_pawn_current_task_name(pawn_id: String) -> String:
+	var starship: Node = get_parent()
+	var pawn_data: Dictionary = starship.pawns[pawn_id]
+	var state: String = str(pawn_data["state"])
+	
+	if state == PawnTaskLogic.STATE_MOVING:
+		return "GOTO"
+	
+	if state == PawnTaskLogic.STATE_IDLE:
+		return "IDLE"
+	
+	var task: Dictionary = pawn_data["task"]
+	var task_type: String = str(task.get("type", ""))
+	
+	if task_type == "":
+		return "IDLE"
+	
+	return task_type.to_upper()
+
+
+func _get_pawn_aid_station_health_income(_pawn_id: String) -> float:
+	return 0.0
+
+
+func _get_pawn_fire_health_loss(pawn_id: String) -> float:
+	var starship: Node = get_parent()
+	var room_id: int = _get_pawn_room_id(pawn_id)
+	
+	if room_id < 0:
+		return 0.0
+	
+	if _get_room_fires_count(room_id) <= 0:
+		return 0.0
+	
+	return float(starship.pawn_fire_room_damage) * _get_pawn_fire_room_damage_factor_for_info(pawn_id)
+
+
+func _get_pawn_oxygen_health_loss(pawn_id: String) -> float:
+	var starship: Node = get_parent()
+	var room_id: int = _get_pawn_room_id(pawn_id)
+	
+	if room_id < 0:
+		return 0.0
+	
+	var pawn_node: Node2D = starship.pawns[pawn_id]["node"]
+	var oxygen: float = float(starship.oxygen_by_room.get(room_id, 100.0))
+	
+	if oxygen >= pawn_node.min_oxygen and oxygen <= pawn_node.max_oxygen:
+		return 0.0
+	
+	return float(starship.pawn_no_oxygen_damage) * _get_pawn_no_oxygen_damage_factor_for_info(pawn_id)
+
+
+func _get_pawn_battle_health_loss(pawn_id: String) -> float:
+	var starship: Node = get_parent()
+	var result: float = 0.0
+	var interval: float = maxf(float(starship.pawn_battle_damage_interval), 0.001)
+	
+	for attacker_id: String in starship.pawns.keys():
+		if attacker_id == pawn_id:
+			continue
+		
+		var attacker_data: Dictionary = starship.pawns[attacker_id]
+		
+		if attacker_data["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+		
+		var task: Dictionary = attacker_data["task"]
+		
+		if task.get("type", "") != PawnTaskLogic.TASK_BATTLE:
+			continue
+		
+		if task.get("target_pawn_id", "") != pawn_id:
+			continue
+		
+		if not starship._battle_target_is_valid(attacker_id, pawn_id):
+			continue
+		
+		var base_damage: int = starship._get_battle_damage_value(attacker_id, pawn_id)
+		var damage: float = float(base_damage) * _get_pawn_battle_damage_factor_for_info(pawn_id)
+		result += damage / interval
+	
+	return result
+
+
+func _get_pawn_room_id(pawn_id: String) -> int:
+	var starship: Node = get_parent()
+	var cell: Vector2i = starship.pawns[pawn_id]["cells"][0]
+	return starship.cell_to_room(cell)
+
+
+func _get_room_oxygen_balance(room_id: int) -> Dictionary:
+	var pawn_balance: Dictionary = _get_room_pawn_oxygen_balance(room_id)
+	var door_balance: Dictionary = _get_room_door_oxygen_balance(room_id)
+	
+	return {
+		"income": {
+			"starship": _get_room_starship_oxygen_income(room_id),
+			"doors": float(door_balance["income"]),
+			"pawns": float(pawn_balance["income"])
+		},
+		"loss": {
+			"fires": _get_room_fire_oxygen_loss(room_id),
+			"holes": _get_room_hole_oxygen_loss(room_id),
+			"doors": float(door_balance["loss"]),
+			"pawns": float(pawn_balance["loss"])
+		}
+	}
+
+
+func _get_room_door_oxygen_balance(room_id: int) -> Dictionary:
+	var starship: Node = get_parent()
+	var income: float = 0.0
+	var loss: float = 0.0
+	
+	for door_link: Dictionary in starship.oxygen_door_links:
+		var room_ids: Array = door_link["room_ids"]
+		
+		if not (room_id in room_ids):
+			continue
+		
+		var door_cells: Array = door_link["door_cells"]
+		var door_state: String = DoorManager.get_door_state(
+			starship.foundation_layer,
+			door_cells
+		)
+		
+		if door_state != DoorManager.DOOR_STATE_OPEN:
+			continue
+		
+		var door_size: int = int(door_link["door_size"])
+		
+		if room_ids.size() >= 2:
+			var flow: float = clampf(
+				float(starship.oxygen_door_flow_per_second) * float(door_size),
+				0.0,
+				1.0
+			)
+			var total_air: float = 0.0
+			var total_area: float = 0.0
+			
+			for linked_room_id: int in room_ids:
+				var linked_area: float = float(starship.oxygen_room_areas.get(linked_room_id, 1.0))
+				var linked_oxygen: float = clampf(float(starship.oxygen_by_room.get(linked_room_id, 0.0)), 0.0, 100.0)
+				
+				total_air += linked_oxygen * linked_area
+				total_area += linked_area
+			
+			if total_area <= 0.0:
+				continue
+			
+			var room_area: float = float(starship.oxygen_room_areas.get(room_id, 1.0))
+			var room_oxygen: float = clampf(float(starship.oxygen_by_room.get(room_id, 0.0)), 0.0, 100.0)
+			var current_air: float = room_oxygen * room_area
+			var target_oxygen: float = total_air / total_area
+			var target_air: float = target_oxygen * room_area
+			var next_air: float = lerpf(current_air, target_air, flow)
+			var delta_oxygen: float = (next_air - current_air) / room_area
+			
+			if delta_oxygen > 0.0:
+				income += delta_oxygen
+			else:
+				loss += -delta_oxygen
+		elif room_ids.size() == 1:
+			var room_area: float = float(starship.oxygen_room_areas.get(room_id, 1.0))
+			var exterior_loss: float = (
+				float(starship.oxygen_exterior_loss_per_second)
+				* float(door_size)
+				/ room_area
+			)
+			loss += exterior_loss
+	
+	return {
+		"income": income,
+		"loss": loss
+	}
+
+
+func _get_room_pawn_oxygen_balance(room_id: int) -> Dictionary:
+	var starship: Node = get_parent()
+	var income: float = 0.0
+	var loss: float = 0.0
+	
+	for pawn_id: String in starship.pawns.keys():
+		if _get_pawn_room_id(pawn_id) != room_id:
+			continue
+		
+		var consumption: float = _get_pawn_oxygen_consumption_for_info(pawn_id)
+		
+		if consumption < 0.0:
+			income += -consumption
+		else:
+			loss += consumption
+	
+	return {
+		"income": income,
+		"loss": loss
+	}
+
+
+func _get_room_fire_oxygen_loss(room_id: int) -> float:
+	var starship: Node = get_parent()
+	var result: float = 0.0
+	
+	for fire_data: Dictionary in starship.fires.values():
+		var fire: Node2D = fire_data["node"]
+		
+		if int(fire.get_meta("room")) != room_id:
+			continue
+		
+		result += float(fire.oxygen_consumption)
+	
+	return result
+
+
+func _get_room_hole_oxygen_loss(room_id: int) -> float:
+	var starship: Node = get_parent()
+	var result: float = 0.0
+	var room: Dictionary = starship.rooms[room_id]
+	
+	for hole_cell: Vector2i in starship.hull_holes.keys():
+		if not (hole_cell in room["floor_cells"]):
+			continue
+		
+		var tile_data: TileData = starship.foundation_layer.get_cell_tile_data(hole_cell)
+		
+		if tile_data == null:
+			continue
+		
+		result += float(tile_data.get_custom_data("impact")) * float(starship.oxygen_hole_loss_per_impact)
+	
+	return result
+
+
+func _get_room_starship_oxygen_income(room_id: int) -> float:
+	var income_by_room: Dictionary = _get_starship_oxygen_income_by_room()
+	return float(income_by_room.get(room_id, 0.0))
+
+
+func _get_starship_oxygen_income_by_room() -> Dictionary:
+	var starship: Node = get_parent()
+	var result: Dictionary = {}
+	var air_by_room: Dictionary = {}
+	var remaining_air: float = float(starship.oxygen_air_production_per_second)
+	
+	for current_room_id: int in range(starship.rooms.size()):
+		var area: float = float(starship.oxygen_room_areas.get(current_room_id, 1.0))
+		var oxygen: float = clampf(float(starship.oxygen_by_room.get(current_room_id, 0.0)), 0.0, 100.0)
+		air_by_room[current_room_id] = oxygen * area
+		result[current_room_id] = 0.0
+	
+	while remaining_air > 0.001:
+		var needy_rooms: Array[int] = []
+		
+		for current_room_id: int in range(starship.rooms.size()):
+			var area: float = float(starship.oxygen_room_areas.get(current_room_id, 1.0))
+			var max_air: float = 100.0 * area
+			var current_air: float = float(air_by_room[current_room_id])
+			
+			if current_air < max_air - 0.001:
+				needy_rooms.append(current_room_id)
+		
+		if needy_rooms.is_empty():
+			break
+		
+		var share: float = remaining_air / float(needy_rooms.size())
+		var used_air: float = 0.0
+		
+		for current_room_id: int in needy_rooms:
+			var area: float = float(starship.oxygen_room_areas.get(current_room_id, 1.0))
+			var max_air: float = 100.0 * area
+			var current_air: float = float(air_by_room[current_room_id])
+			var deficit: float = max_air - current_air
+			var added_air: float = minf(share, deficit)
+			
+			air_by_room[current_room_id] = current_air + added_air
+			result[current_room_id] = float(result[current_room_id]) + added_air / area
+			used_air += added_air
+		
+		if used_air <= 0.001:
+			break
+		
+		remaining_air -= used_air
+	
+	return result
+
+
+func _get_room_holes_count(room_id: int) -> int:
+	var starship: Node = get_parent()
+	var result: int = 0
+	var room: Dictionary = starship.rooms[room_id]
+	
+	for hole_cell: Vector2i in starship.hull_holes.keys():
+		if hole_cell in room["floor_cells"]:
+			result += 1
+	
+	return result
+
+
+func _get_room_fires_count(room_id: int) -> int:
+	var starship: Node = get_parent()
+	var result: int = 0
+	
+	for fire_data: Dictionary in starship.fires.values():
+		var fire: Node2D = fire_data["node"]
+		
+		if int(fire.get_meta("room")) == room_id:
+			result += 1
+	
+	return result
+
+
+func _get_current_door_max_hp_for_info() -> float:
+	var starship: Node = get_parent()
+	var index: int = clampi(
+		int(starship.doors_level),
+		0,
+		starship.health_doors_levels_map.size() - 1
+	)
+	return float(starship.health_doors_levels_map[index])
+
+
+func _info_door_cells_key(door_cells: Array) -> String:
+	var cells: Array[String] = []
+	
+	for cell_variant: Variant in door_cells:
+		var cell: Vector2i = cell_variant
+		cells.append(str(cell.x) + ":" + str(cell.y))
+	
+	cells.sort()
+	return "|".join(cells)
+
+
+func _get_pawn_oxygen_consumption_for_info(pawn_id: String) -> float:
+	return float(get_parent().pawns[pawn_id]["node"].get_oxygen_consumption())
+
+
+func _get_pawn_no_oxygen_damage_factor_for_info(pawn_id: String) -> float:
+	return float(get_parent().pawns[pawn_id]["node"].get_no_oxygen_damage_factor())
+
+
+func _get_pawn_fire_room_damage_factor_for_info(pawn_id: String) -> float:
+	return float(get_parent().pawns[pawn_id]["node"].get_fire_room_damage_factor())
+
+
+func _get_pawn_battle_damage_factor_for_info(pawn_id: String) -> float:
+	return float(get_parent().pawns[pawn_id]["node"].get_battle_damage_factor())

@@ -2,7 +2,7 @@
 
 [ext_resource type="PackedScene" uid="uid://c8ku4jfqv6od0" path="res://scenes/background.tscn" id="1_4mrxx"]
 [ext_resource type="PackedScene" uid="uid://cd5eulfo5s1wb" path="res://scenes/interface.tscn" id="1_nnsk1"]
-[ext_resource type="Shader" uid="uid://gv0icojt6sm1" path="res://scripts/door_recolor.gdshader" id="4_7r4gi"]
+[ext_resource type="Shader" uid="uid://gv0icojt6sm1" path="res://scripts/recolor.gdshader" id="4_7r4gi"]
 [ext_resource type="Script" uid="uid://bvk2tesa2mxrm" path="res://scripts/icons.gd" id="9_w7kh3"]
 [ext_resource type="Script" uid="uid://du828knuodq85" path="res://scripts/starship.gd" id="14_navra"]
 [ext_resource type="TileSet" uid="uid://doqmj0wfyr86d" path="res://assets/foundation.tres" id="15_luhhm"]

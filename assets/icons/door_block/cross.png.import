@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://52as0hpdxb12"
-path="res://.godot/imported/check.png-1a1bed3ddc56404f4d59c89523d150af.ctex"
+uid="uid://dpugc3rg7vr1g"
+path="res://.godot/imported/cross.png-65ff342159a8318ea788729033ea2205.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/door_block/check.png"
-dest_files=["res://.godot/imported/check.png-1a1bed3ddc56404f4d59c89523d150af.ctex"]
+source_file="res://assets/icons/door_block/cross.png"
+dest_files=["res://.godot/imported/cross.png-65ff342159a8318ea788729033ea2205.ctex"]
 
 [params]
 

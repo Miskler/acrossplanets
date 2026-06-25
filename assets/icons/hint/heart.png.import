@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cyyief5m6qit3"
-path="res://.godot/imported/hand.png-e2fdf1e972669ed77c87d0a3fb44f9dd.ctex"
+uid="uid://bdce8cundv0rq"
+path="res://.godot/imported/heart.png-8d4548c596d5cae8abe45cff97221a73.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/door_block/hand.png"
-dest_files=["res://.godot/imported/hand.png-e2fdf1e972669ed77c87d0a3fb44f9dd.ctex"]
+source_file="res://assets/icons/hint/heart.png"
+dest_files=["res://.godot/imported/heart.png-8d4548c596d5cae8abe45cff97221a73.ctex"]
 
 [params]
 

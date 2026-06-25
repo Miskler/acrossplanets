@@ -15,7 +15,6 @@ var current_tween: Tween
 
 
 func anim(time: float) -> void:
-	print(time)
 	modulate.a = 0.0
 	hand.modulate.a = 1.0
 	block.modulate.a = 1.0

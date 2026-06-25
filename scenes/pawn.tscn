@@ -2,6 +2,14 @@
 
 [ext_resource type="Script" uid="uid://clbvs8vtimav5" path="res://scripts/pawn.gd" id="1_ccfo0"]
 [ext_resource type="SpriteFrames" uid="uid://cyym0drqtgjb0" path="res://assets/races/human.tres" id="2_eqwak"]
+[ext_resource type="Shader" uid="uid://gv0icojt6sm1" path="res://scripts/recolor.gdshader" id="2_w61pg"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_0gq48"]
+shader = ExtResource("2_w61pg")
+shader_parameter/from_color = Color(0.28235295, 0.3882353, 0.48235294, 1)
+shader_parameter/to_color = Color(1, 0, 0, 1)
+shader_parameter/tolerance = 0.55
+shader_parameter/keep_brightness = true
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_ccfo0"]
 size = Vector2(40, 40)
@@ -10,11 +18,13 @@ size = Vector2(40, 40)
 script = ExtResource("1_ccfo0")
 
 [node name="Sprite" type="AnimatedSprite2D" parent="." unique_id=1882085587]
+material = SubResource("ShaderMaterial_0gq48")
 scale = Vector2(0.16, 0.16)
 sprite_frames = ExtResource("2_eqwak")
 animation = &"down_battle"
 
 [node name="Clickup" type="CollisionShape2D" parent="." unique_id=1038787742]
+visible = false
 shape = SubResource("RectangleShape2D_ccfo0")
 
 [node name="HealthBar" type="ProgressBar" parent="." unique_id=1765383146]
