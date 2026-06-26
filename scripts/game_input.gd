@@ -1,6 +1,7 @@
 extends Node2D
 
 @onready var icons_layer = $"../Icons"
+@onready var hint_layer = $"../Hint"
 
 var selected_pawn_uuids: Dictionary = {}
 
@@ -58,6 +59,12 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	_update_room_hover()
 	_update_room_hover_hole_materials()
+	_update_hint_layer()
+
+
+func _update_hint_layer() -> void:
+	hint_layer.position = get_local_mouse_position() + Vector2(10, 10)
+	hint_layer.render(get_info_at_global_position(get_global_mouse_position()))
 
 
 func _finish_init() -> void:
@@ -765,10 +772,10 @@ func get_info_at_global_position(global_position: Vector2) -> Dictionary:
 		if collider == null:
 			continue
 		
-		if collider.is_in_group("pawn"):
+		if collider.is_in_group("door"):
 			return {
-				"type": "pawn",
-				"info": get_pawn_info(str(collider.get_meta("uuid")))
+				"type": "door",
+				"info": get_door_info(collider.get_meta("door_cells"))
 			}
 	
 	for hit: Dictionary in hits:
@@ -777,11 +784,13 @@ func get_info_at_global_position(global_position: Vector2) -> Dictionary:
 		if collider == null:
 			continue
 		
-		if collider.is_in_group("door"):
-			return {
-				"type": "door",
-				"info": get_door_info(collider.get_meta("door_cells"))
-			}
+		if collider.is_in_group("pawn"):
+			var pawn_id = str(collider.get_meta("uuid"))
+			if get_parent().pawns.has(pawn_id):
+				return {
+					"type": "pawn",
+					"info": get_pawn_info(pawn_id)
+				}
 	
 	for hit: Dictionary in hits:
 		var collider: Object = hit.get("collider", null)
@@ -804,6 +813,7 @@ func get_pawn_info(pawn_id: String) -> Dictionary:
 	var pawn_node: Node2D = pawn_data["node"]
 	
 	return {
+		"pawn_name": str(pawn_data.get("pawn_name", pawn_node.get_meta("pawn_name", ""))),
 		"health": int(pawn_node.health),
 		"current_task": _get_pawn_current_task_name(pawn_id),
 		"health_balance": {
@@ -819,11 +829,39 @@ func get_pawn_info(pawn_id: String) -> Dictionary:
 	}
 
 
+
+func _get_door_fortress_percent(door_key: String) -> float:
+	var starship: Node = get_parent()
+	var max_hp: float = _get_current_door_max_hp_for_info()
+	var fortress: float = float(starship.door_hp_by_key.get(door_key, max_hp))
+	
+	if max_hp <= 0.0:
+		return 100.0
+	
+	return clampf(fortress / max_hp * 100.0, 0.0, 100.0)
+
+
+func _get_room_fortress_percent(room_id: int) -> float:
+	var starship: Node = get_parent()
+	var fortress: float = float(starship.room_fortitude_by_room.get(room_id, starship.room_fortitude_max))
+	var max_fortress: float = float(starship.room_fortitude_max)
+	var extra_fortress: float = float(starship.room_repair_fortitude_extra)
+	
+	if max_fortress <= 0.0:
+		return 100.0
+	
+	if fortress <= max_fortress:
+		return clampf(fortress / max_fortress * 100.0, 0.0, 100.0)
+	
+	if extra_fortress <= 0.0:
+		return 100.0
+	
+	return clampf(100.0 + (fortress - max_fortress) / extra_fortress * 100.0, 100.0, 200.0)
+
 func get_door_info(door_cells: Array) -> Dictionary:
 	var starship: Node = get_parent()
 	var door_key: String = _info_door_cells_key(door_cells)
-	var max_hp: float = _get_current_door_max_hp_for_info()
-	var fortress: float = float(starship.door_hp_by_key.get(door_key, max_hp))
+	var cooldown: float = float(starship.door_close_cooldowns.get(door_key, 0.0))
 	var is_open: bool = DoorManager.get_door_state(
 		starship.foundation_layer,
 		door_cells
@@ -831,23 +869,28 @@ func get_door_info(door_cells: Array) -> Dictionary:
 	
 	return {
 		"level": int(starship.doors_level),
-		"fortress": fortress,
-		"open": is_open
+		"fortress": _get_door_fortress_percent(door_key),
+		"open": is_open,
+		"broken": cooldown > 0.0,
+		"cooldown": cooldown
 	}
 
 
 func get_room_info(room_id: int) -> Dictionary:
 	var starship: Node = get_parent()
 	var oxygen_balance: Dictionary = _get_room_oxygen_balance(room_id)
+	var room: Dictionary = starship.rooms[room_id]
 	
 	return {
+		"specialization": str(room["kind"]),
 		"oxygen": float(starship.oxygen_by_room.get(room_id, 0.0)),
+		"air_capacity": _get_room_air_capacity(room_id),
 		"holes": _get_room_holes_count(room_id),
 		"fires": _get_room_fires_count(room_id),
 		"health": {
 			"current": int(starship.room_integrity_by_room.get(room_id, 0)),
 			"maximum": int(starship.room_integrity_max_by_room.get(room_id, starship.room_integrity_max_default)),
-			"fortress": float(starship.room_fortitude_by_room.get(room_id, starship.room_fortitude_max)),
+			"fortress": _get_room_fortress_percent(room_id),
 			"energy": int(starship.room_current_power_by_room.get(room_id, 0))
 		},
 		"oxygen_balance": oxygen_balance
@@ -956,7 +999,7 @@ func _get_room_oxygen_balance(room_id: int) -> Dictionary:
 	
 	return {
 		"income": {
-			"starship": _get_room_starship_oxygen_income(room_id),
+			"starship": _get_room_starship_oxygen_income_max(room_id),
 			"doors": float(door_balance["income"]),
 			"pawns": float(pawn_balance["income"])
 		},
@@ -1001,7 +1044,7 @@ func _get_room_door_oxygen_balance(room_id: int) -> Dictionary:
 			var total_area: float = 0.0
 			
 			for linked_room_id: int in room_ids:
-				var linked_area: float = float(starship.oxygen_room_areas.get(linked_room_id, 1.0))
+				var linked_area: float = _get_room_area(linked_room_id)
 				var linked_oxygen: float = clampf(float(starship.oxygen_by_room.get(linked_room_id, 0.0)), 0.0, 100.0)
 				
 				total_air += linked_oxygen * linked_area
@@ -1010,7 +1053,7 @@ func _get_room_door_oxygen_balance(room_id: int) -> Dictionary:
 			if total_area <= 0.0:
 				continue
 			
-			var room_area: float = float(starship.oxygen_room_areas.get(room_id, 1.0))
+			var room_area: float = _get_room_area(room_id)
 			var room_oxygen: float = clampf(float(starship.oxygen_by_room.get(room_id, 0.0)), 0.0, 100.0)
 			var current_air: float = room_oxygen * room_area
 			var target_oxygen: float = total_air / total_area
@@ -1023,7 +1066,7 @@ func _get_room_door_oxygen_balance(room_id: int) -> Dictionary:
 			else:
 				loss += -delta_oxygen
 		elif room_ids.size() == 1:
-			var room_area: float = float(starship.oxygen_room_areas.get(room_id, 1.0))
+			var room_area: float = _get_room_area(room_id)
 			var exterior_loss: float = (
 				float(starship.oxygen_exterior_loss_per_second)
 				* float(door_size)
@@ -1038,9 +1081,15 @@ func _get_room_door_oxygen_balance(room_id: int) -> Dictionary:
 
 
 func _get_room_pawn_oxygen_balance(room_id: int) -> Dictionary:
+	return {
+		"income": _air_to_room_oxygen_percent(room_id, _get_room_pawn_oxygen_income_air(room_id)),
+		"loss": _air_to_room_oxygen_percent(room_id, _get_room_pawn_oxygen_loss_air(room_id))
+	}
+
+
+func _get_room_pawn_oxygen_income_air(room_id: int) -> float:
 	var starship: Node = get_parent()
-	var income: float = 0.0
-	var loss: float = 0.0
+	var result: float = 0.0
 	
 	for pawn_id: String in starship.pawns.keys():
 		if _get_pawn_room_id(pawn_id) != room_id:
@@ -1049,17 +1098,32 @@ func _get_room_pawn_oxygen_balance(room_id: int) -> Dictionary:
 		var consumption: float = _get_pawn_oxygen_consumption_for_info(pawn_id)
 		
 		if consumption < 0.0:
-			income += -consumption
-		else:
-			loss += consumption
+			result += -consumption
 	
-	return {
-		"income": income,
-		"loss": loss
-	}
+	return result
+
+
+func _get_room_pawn_oxygen_loss_air(room_id: int) -> float:
+	var starship: Node = get_parent()
+	var result: float = 0.0
+	
+	for pawn_id: String in starship.pawns.keys():
+		if _get_pawn_room_id(pawn_id) != room_id:
+			continue
+		
+		var consumption: float = _get_pawn_oxygen_consumption_for_info(pawn_id)
+		
+		if consumption > 0.0:
+			result += consumption
+	
+	return result
 
 
 func _get_room_fire_oxygen_loss(room_id: int) -> float:
+	return _air_to_room_oxygen_percent(room_id, _get_room_fire_oxygen_loss_air(room_id))
+
+
+func _get_room_fire_oxygen_loss_air(room_id: int) -> float:
 	var starship: Node = get_parent()
 	var result: float = 0.0
 	
@@ -1075,6 +1139,10 @@ func _get_room_fire_oxygen_loss(room_id: int) -> float:
 
 
 func _get_room_hole_oxygen_loss(room_id: int) -> float:
+	return _air_to_room_oxygen_percent(room_id, _get_room_hole_oxygen_loss_air(room_id))
+
+
+func _get_room_hole_oxygen_loss_air(room_id: int) -> float:
 	var starship: Node = get_parent()
 	var result: float = 0.0
 	var room: Dictionary = starship.rooms[room_id]
@@ -1094,31 +1162,58 @@ func _get_room_hole_oxygen_loss(room_id: int) -> float:
 
 
 func _get_room_starship_oxygen_income(room_id: int) -> float:
-	var income_by_room: Dictionary = _get_starship_oxygen_income_by_room()
+	return _get_room_starship_oxygen_income_max(room_id)
+
+
+func _get_room_starship_oxygen_income_max(room_id: int) -> float:
+	var income_by_room: Dictionary = _get_starship_oxygen_income_hypothetical_by_room(room_id)
 	return float(income_by_room.get(room_id, 0.0))
 
 
-func _get_starship_oxygen_income_by_room() -> Dictionary:
+func _get_starship_oxygen_income_hypothetical_by_room(forced_room_id: int) -> Dictionary:
+	return _get_starship_oxygen_income_with_forced_needy_room(forced_room_id)
+
+
+func _get_starship_oxygen_income_with_forced_needy_room(forced_room_id: int) -> Dictionary:
 	var starship: Node = get_parent()
 	var result: Dictionary = {}
 	var air_by_room: Dictionary = {}
-	var remaining_air: float = float(starship.oxygen_air_production_per_second)
 	
 	for current_room_id: int in range(starship.rooms.size()):
-		var area: float = float(starship.oxygen_room_areas.get(current_room_id, 1.0))
+		var area: float = _get_room_area(current_room_id)
 		var oxygen: float = clampf(float(starship.oxygen_by_room.get(current_room_id, 0.0)), 0.0, 100.0)
+		
 		air_by_room[current_room_id] = oxygen * area
 		result[current_room_id] = 0.0
+	
+	_apply_door_oxygen_to_air_by_room_for_info(air_by_room)
+	
+	for current_room_id: int in range(starship.rooms.size()):
+		var consumption: float = (
+			_get_room_fire_oxygen_loss_air(current_room_id)
+			+ _get_room_hole_oxygen_loss_air(current_room_id)
+			+ _get_room_pawn_oxygen_loss_air(current_room_id)
+			- _get_room_pawn_oxygen_income_air(current_room_id)
+		)
+		
+		air_by_room[current_room_id] = maxf(
+			0.0,
+			float(air_by_room[current_room_id]) - consumption
+		)
+	
+	var remaining_air: float = maxf(float(starship.oxygen_air_production_per_second), 0.0)
 	
 	while remaining_air > 0.001:
 		var needy_rooms: Array[int] = []
 		
 		for current_room_id: int in range(starship.rooms.size()):
-			var area: float = float(starship.oxygen_room_areas.get(current_room_id, 1.0))
+			var area: float = _get_room_area(current_room_id)
 			var max_air: float = 100.0 * area
 			var current_air: float = float(air_by_room[current_room_id])
 			
-			if current_air < max_air - 0.001:
+			if current_room_id == forced_room_id:
+				needy_rooms.append(current_room_id)
+			elif current_air < max_air - 0.001:
 				needy_rooms.append(current_room_id)
 		
 		if needy_rooms.is_empty():
@@ -1128,9 +1223,13 @@ func _get_starship_oxygen_income_by_room() -> Dictionary:
 		var used_air: float = 0.0
 		
 		for current_room_id: int in needy_rooms:
-			var area: float = float(starship.oxygen_room_areas.get(current_room_id, 1.0))
+			var area: float = _get_room_area(current_room_id)
 			var max_air: float = 100.0 * area
 			var current_air: float = float(air_by_room[current_room_id])
+			
+			if current_room_id == forced_room_id:
+				max_air = current_air + remaining_air
+			
 			var deficit: float = max_air - current_air
 			var added_air: float = minf(share, deficit)
 			
@@ -1144,6 +1243,68 @@ func _get_starship_oxygen_income_by_room() -> Dictionary:
 		remaining_air -= used_air
 	
 	return result
+
+
+func _apply_door_oxygen_to_air_by_room_for_info(air_by_room: Dictionary) -> void:
+	var starship: Node = get_parent()
+	
+	for door_link: Dictionary in starship.oxygen_door_links:
+		var door_cells: Array = door_link["door_cells"]
+		var door_state: String = DoorManager.get_door_state(
+			starship.foundation_layer,
+			door_cells
+		)
+		
+		if door_state != DoorManager.DOOR_STATE_OPEN:
+			continue
+		
+		var room_ids: Array = door_link["room_ids"]
+		var door_size: int = int(door_link["door_size"])
+		
+		if room_ids.size() >= 2:
+			var total_air: float = 0.0
+			var total_area: float = 0.0
+			
+			for linked_room_id: int in room_ids:
+				total_air += float(air_by_room[linked_room_id])
+				total_area += _get_room_area(linked_room_id)
+			
+			if total_area <= 0.0:
+				continue
+			
+			var target_oxygen: float = total_air / total_area
+			var flow: float = clampf(
+				float(starship.oxygen_door_flow_per_second) * float(door_size),
+				0.0,
+				1.0
+			)
+			
+			for linked_room_id: int in room_ids:
+				var area: float = _get_room_area(linked_room_id)
+				var current_air: float = float(air_by_room[linked_room_id])
+				var target_air: float = target_oxygen * area
+				
+				air_by_room[linked_room_id] = lerpf(current_air, target_air, flow)
+		elif room_ids.size() == 1:
+			var linked_room_id: int = int(room_ids[0])
+			var leak: float = float(starship.oxygen_exterior_loss_per_second) * float(door_size)
+			
+			air_by_room[linked_room_id] = maxf(
+				0.0,
+				float(air_by_room[linked_room_id]) - leak
+			)
+
+
+func _get_room_area(room_id: int) -> float:
+	return maxf(float(get_parent().oxygen_room_areas.get(room_id, 1.0)), 1.0)
+
+
+func _get_room_air_capacity(room_id: int) -> float:
+	return 100.0 * _get_room_area(room_id)
+
+
+func _air_to_room_oxygen_percent(room_id: int, air_amount: float) -> float:
+	return float(air_amount) / _get_room_area(room_id)
 
 
 func _get_room_holes_count(room_id: int) -> int:

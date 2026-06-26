@@ -34,6 +34,7 @@ var starship: String = ""
 # временный переход пешки под управление другого корабля (ии или игрока)
 var temporary_management_starship: String = ""
 
+var pawn_name: String = "!!NONAME!!"
 var race: String = "human"
 var direction: String = "side" # side, top, down
 var animation: String = "standing" # standing, moving

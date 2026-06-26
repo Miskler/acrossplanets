@@ -9,12 +9,11 @@ signal delete_pawn_event(node, uuid)
 signal room_hp_changed(room_id: int, hp: float)
 signal room_hp_depleted(room_id: int)
 
-@export var pawns2spawn: Array[Dictionary] = [{"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
+@export var pawns2spawn: Array[Dictionary] = [{"race": "human"}, {"race": "human"}, {"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
 
 @onready var foundation_layer = $Foundation
 @onready var stations_layer = $Stations
 @onready var technical_layer = $Technical
-@onready var door_block_layer = $Technical
 @onready var icons_layer = $Icons
 @onready var pawns_layer = $Pawns
 @onready var fire_layer = $Fire
@@ -191,37 +190,96 @@ func restart() -> void:
 		pawn.queue_free()
 	pawns = {}
 	for pawn in pawns2spawn:
-		add_pawn(pawn["race"], pawn.get("starship", starship_uuid))
+		add_pawn(pawn)
 	
 	emit_signal("restart_finish")
 
-func add_pawn(race: String, starship: String = starship_uuid) -> bool:
-	var available_cells: Array[Vector2i] = dynamically_available_cells()
-	
-	if available_cells.size() < 1:
-		return false
-	
+func add_pawn(pawn_data_or_race: Variant, starship: String = starship_uuid, overrides: Dictionary = {}) -> bool:
+	var pawn_data: Dictionary = {}
+
+	if typeof(pawn_data_or_race) == TYPE_DICTIONARY:
+		pawn_data = pawn_data_or_race.duplicate(true)
+	else:
+		pawn_data = overrides.duplicate(true)
+		pawn_data["race"] = str(pawn_data_or_race)
+		pawn_data["starship"] = starship
+
+	var race: String = str(pawn_data["race"])
+	var pawn_starship: String = str(pawn_data.get("starship", starship_uuid))
+	var spawn_cell: Vector2i
+
+	if pawn_data.has("spawn_cell"):
+		spawn_cell = _pawn_spawn_cell_from_json(pawn_data["spawn_cell"])
+	else:
+		var available_cells: Array[Vector2i] = dynamically_available_cells()
+		
+		if available_cells.size() < 1:
+			return false
+		
+		spawn_cell = available_cells[0]
+
 	var pawn = load("res://scenes/pawn.tscn").instantiate()
-	pawn.position = _cell_to_pawn_parent_position(available_cells[0])
+	pawn.position = _cell_to_pawn_parent_position(spawn_cell)
 	pawns_layer.add_child(pawn)
-	pawn.starship = starship
+	pawn.starship = pawn_starship
 	pawn.set_race(race)
-	pawn.set_animation("down", "standing")
-	var uuid = NodeUUID.uuid_v4()
+
+	var uuid: String = str(pawn_data.get("uuid", NodeUUID.uuid_v4()))
+	var pawn_name: String = str(pawn_data.get("pawn_name", NameGenerator.random(race)))
+	pawn.pawn_name = pawn_name
 	pawn.set_meta("uuid", uuid)
-	
+	pawn.set_meta("pawn_name", pawn_name)
+
+	if pawn_data.has("health"):
+		pawn.health = int(pawn_data["health"])
+
+	pawn.set_animation("down", "standing")
+
 	pawn.connect("movement_action_required", _on_pawn_action_required.bind(uuid))
 	pawn.connect("movement_finished", _on_pawn_movement_finished.bind(uuid))
 	pawn.connect("dead", _on_pawn_dead.bind(uuid))
 	
 	pawns[uuid] = {
 		"node": pawn,
-		"cells": [available_cells[0]],
+		"race": race,
+		"pawn_name": pawn_name,
+		"cells": [spawn_cell],
 		"state": "idle",
 		"task": {}
 	}
 	emit_signal("add_pawn_event", pawn, uuid)
 	return true
+
+
+func pawn_to_json(pawn_id: String) -> Dictionary:
+	var pawn_data: Dictionary = pawns[pawn_id]
+	var pawn_node: Node = pawn_data["node"]
+	var cell: Vector2i = pawn_data["cells"][0]
+
+	return {
+		"race": str(pawn_data["race"]),
+		"starship": str(pawn_node.get_current_starship()),
+		"uuid": pawn_id,
+		"pawn_name": str(pawn_data["pawn_name"]),
+		"spawn_cell": {
+			"x": cell.x,
+			"y": cell.y
+		},
+		"health": int(pawn_node.health)
+	}
+
+
+func _pawn_spawn_cell_from_json(value: Variant) -> Vector2i:
+	if typeof(value) == TYPE_VECTOR2I:
+		return value
+
+	if typeof(value) == TYPE_VECTOR2:
+		return Vector2i(int(value.x), int(value.y))
+
+	if typeof(value) == TYPE_ARRAY:
+		return Vector2i(int(value[0]), int(value[1]))
+
+	return Vector2i(int(value["x"]), int(value["y"]))
 
 func _on_pawn_action_required(
 	step: Dictionary,
@@ -2816,7 +2874,6 @@ func _ensure_room_station_hp_visual(room_id: int) -> void:
 	layer.name = "RoomStationHpVisual_" + str(room_id)
 	layer.tile_set = stations_layer.tile_set
 	layer.position = Vector2.ZERO
-	layer.z_index = 1
 	layer.z_as_relative = true
 	layer.modulate = Color(0.0, 0.0, 0.0, 0.0)
 

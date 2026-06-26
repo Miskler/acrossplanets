@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://c67h1i15e8jv0"]
 
 [ext_resource type="Texture2D" uid="uid://bdce8cundv0rq" path="res://assets/icons/hint/heart.png" id="1_grpcu"]
+[ext_resource type="Script" uid="uid://npasmv6cckt5" path="res://scripts/hint.gd" id="1_nws1o"]
 [ext_resource type="Texture2D" uid="uid://dhm23ifg2w00k" path="res://assets/icons/hint/crack.png" id="2_eevai"]
 [ext_resource type="Texture2D" uid="uid://bd3scdxowqlis" path="res://assets/icons/hint/oxygen.png" id="2_w3r4f"]
 [ext_resource type="Texture2D" uid="uid://domrhmrxqgq27" path="res://assets/icons/hint/fire.png" id="3_l02gy"]
@@ -8,6 +9,7 @@
 [ext_resource type="Texture2D" uid="uid://fwrcidcgt7jm" path="res://assets/icons/hint/human.png" id="6_nws1o"]
 [ext_resource type="Texture2D" uid="uid://ded6dom4ttygt" path="res://assets/icons/hint/starship.png" id="7_1v1av"]
 [ext_resource type="Texture2D" uid="uid://clskg70w0x73r" path="res://assets/icons/hint/level.png" id="8_l02gy"]
+[ext_resource type="Texture2D" uid="uid://cyf8ux08cchhb" path="res://assets/icons/hint/aid.png" id="10_1v1av"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fket2"]
 bg_color = Color(1, 1, 1, 1)
@@ -33,10 +35,11 @@ layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_right = -969.0
-offset_bottom = -505.0
+offset_right = -934.0
+offset_bottom = -448.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("1_nws1o")
 
 [node name="Background" type="ColorRect" parent="." unique_id=1473130384]
 layout_mode = 1
@@ -56,10 +59,9 @@ offset_left = 3.0
 offset_top = 2.0
 offset_right = -2.0
 offset_bottom = -3.2580013
-text = "Майкл бъётся"
+text = "Майкл латает пробоину"
 
 [node name="Room" type="Control" parent="." unique_id=648700190]
-visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -272,19 +274,19 @@ offset_bottom = -30.999985
 grow_vertical = 0
 columns = 2
 
-[node name="Control" type="Control" parent="Room/Grid/GridContainer" unique_id=397618515]
+[node name="DOORS_income" type="Control" parent="Room/Grid/GridContainer" unique_id=397618515]
 custom_minimum_size = Vector2(0, 23)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Control" type="Control" parent="Room/Grid/GridContainer/Control" unique_id=1931861238]
+[node name="Control" type="Control" parent="Room/Grid/GridContainer/DOORS_income" unique_id=1931861238]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 22.0
 grow_horizontal = 2
 
-[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/Control/Control" unique_id=273079410]
+[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/DOORS_income/Control" unique_id=273079410]
 layout_mode = 1
 anchors_preset = 9
 anchor_bottom = 1.0
@@ -293,7 +295,43 @@ grow_vertical = 2
 texture = ExtResource("5_acx8x")
 expand_mode = 2
 
-[node name="Label" type="Label" parent="Room/Grid/GridContainer/Control/Control" unique_id=114279252]
+[node name="Label" type="Label" parent="Room/Grid/GridContainer/DOORS_income/Control" unique_id=114279252]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.386
+anchor_top = -0.023000002
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -0.0020008087
+offset_top = 0.006000042
+offset_bottom = 0.5
+grow_horizontal = 0
+grow_vertical = 2
+text = "+12"
+vertical_alignment = 1
+
+[node name="DOORS_loss" type="Control" parent="Room/Grid/GridContainer" unique_id=2122250406]
+custom_minimum_size = Vector2(0, 23)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Control" type="Control" parent="Room/Grid/GridContainer/DOORS_loss" unique_id=2141755371]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 22.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/DOORS_loss/Control" unique_id=1591918925]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 22.0
+grow_vertical = 2
+texture = ExtResource("5_acx8x")
+expand_mode = 2
+
+[node name="Label" type="Label" parent="Room/Grid/GridContainer/DOORS_loss/Control" unique_id=2087833196]
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.386
@@ -308,19 +346,19 @@ grow_vertical = 2
 text = "-12"
 vertical_alignment = 1
 
-[node name="Control2" type="Control" parent="Room/Grid/GridContainer" unique_id=1322033411]
+[node name="PAWNS_income" type="Control" parent="Room/Grid/GridContainer" unique_id=1322033411]
 custom_minimum_size = Vector2(0, 23)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Control" type="Control" parent="Room/Grid/GridContainer/Control2" unique_id=599041186]
+[node name="Control" type="Control" parent="Room/Grid/GridContainer/PAWNS_income" unique_id=599041186]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 22.0
 grow_horizontal = 2
 
-[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/Control2/Control" unique_id=698130792]
+[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/PAWNS_income/Control" unique_id=698130792]
 layout_mode = 1
 anchors_preset = 9
 anchor_bottom = 1.0
@@ -329,7 +367,43 @@ grow_vertical = 2
 texture = ExtResource("6_nws1o")
 expand_mode = 2
 
-[node name="Label" type="Label" parent="Room/Grid/GridContainer/Control2/Control" unique_id=1516920114]
+[node name="Label" type="Label" parent="Room/Grid/GridContainer/PAWNS_income/Control" unique_id=1516920114]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.386
+anchor_top = -0.023000002
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -0.0020008087
+offset_top = 0.006000042
+offset_bottom = 0.5
+grow_horizontal = 0
+grow_vertical = 2
+text = "+12"
+vertical_alignment = 1
+
+[node name="PAWNS_loss" type="Control" parent="Room/Grid/GridContainer" unique_id=1959355641]
+custom_minimum_size = Vector2(0, 23)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Control" type="Control" parent="Room/Grid/GridContainer/PAWNS_loss" unique_id=1390175275]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 22.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/PAWNS_loss/Control" unique_id=1632300333]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 22.0
+grow_vertical = 2
+texture = ExtResource("6_nws1o")
+expand_mode = 2
+
+[node name="Label" type="Label" parent="Room/Grid/GridContainer/PAWNS_loss/Control" unique_id=1120139883]
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.386
@@ -344,19 +418,19 @@ grow_vertical = 2
 text = "-12"
 vertical_alignment = 1
 
-[node name="Control3" type="Control" parent="Room/Grid/GridContainer" unique_id=172247529]
+[node name="STARSHIP_income" type="Control" parent="Room/Grid/GridContainer" unique_id=172247529]
 custom_minimum_size = Vector2(0, 23)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Control" type="Control" parent="Room/Grid/GridContainer/Control3" unique_id=2061408093]
+[node name="Control" type="Control" parent="Room/Grid/GridContainer/STARSHIP_income" unique_id=2061408093]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 22.0
 grow_horizontal = 2
 
-[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/Control3/Control" unique_id=2017787290]
+[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/STARSHIP_income/Control" unique_id=2017787290]
 layout_mode = 1
 anchors_preset = 9
 anchor_bottom = 1.0
@@ -365,7 +439,43 @@ grow_vertical = 2
 texture = ExtResource("7_1v1av")
 expand_mode = 2
 
-[node name="Label" type="Label" parent="Room/Grid/GridContainer/Control3/Control" unique_id=1697723317]
+[node name="Label" type="Label" parent="Room/Grid/GridContainer/STARSHIP_income/Control" unique_id=1697723317]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.386
+anchor_top = -0.023000002
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -0.0020008087
+offset_top = 0.006000042
+offset_bottom = 0.5
+grow_horizontal = 0
+grow_vertical = 2
+text = "+12"
+vertical_alignment = 1
+
+[node name="FIRES_loss" type="Control" parent="Room/Grid/GridContainer" unique_id=1861021406]
+custom_minimum_size = Vector2(0, 23)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Control" type="Control" parent="Room/Grid/GridContainer/FIRES_loss" unique_id=346294883]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 22.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/FIRES_loss/Control" unique_id=330564080]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 22.0
+grow_vertical = 2
+texture = ExtResource("3_l02gy")
+expand_mode = 2
+
+[node name="Label" type="Label" parent="Room/Grid/GridContainer/FIRES_loss/Control" unique_id=1063785]
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.386
@@ -380,28 +490,28 @@ grow_vertical = 2
 text = "-12"
 vertical_alignment = 1
 
-[node name="Control4" type="Control" parent="Room/Grid/GridContainer" unique_id=1861021406]
+[node name="HOLES_loss" type="Control" parent="Room/Grid/GridContainer" unique_id=1481813447]
 custom_minimum_size = Vector2(0, 23)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Control" type="Control" parent="Room/Grid/GridContainer/Control4" unique_id=346294883]
+[node name="Control" type="Control" parent="Room/Grid/GridContainer/HOLES_loss" unique_id=1795061786]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 22.0
 grow_horizontal = 2
 
-[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/Control4/Control" unique_id=330564080]
+[node name="Logo" type="TextureRect" parent="Room/Grid/GridContainer/HOLES_loss/Control" unique_id=1413341609]
 layout_mode = 1
 anchors_preset = 9
 anchor_bottom = 1.0
 offset_right = 22.0
 grow_vertical = 2
-texture = ExtResource("3_l02gy")
+texture = ExtResource("2_eevai")
 expand_mode = 2
 
-[node name="Label" type="Label" parent="Room/Grid/GridContainer/Control4/Control" unique_id=1063785]
+[node name="Label" type="Label" parent="Room/Grid/GridContainer/HOLES_loss/Control" unique_id=1732378624]
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.386
@@ -477,7 +587,7 @@ offset_top = 27.0
 offset_right = 1.5399933
 grow_vertical = 2
 
-[node name="Cracks" type="Control" parent="Door" unique_id=712490737]
+[node name="Level" type="Control" parent="Door" unique_id=712490737]
 custom_minimum_size = Vector2(0, 25)
 layout_mode = 1
 anchor_left = 0.23500001
@@ -487,7 +597,7 @@ offset_top = 33.0
 offset_right = 23.196
 offset_bottom = 58.0
 
-[node name="Logo" type="TextureRect" parent="Door/Cracks" unique_id=1012150015]
+[node name="Logo" type="TextureRect" parent="Door/Level" unique_id=1012150015]
 layout_mode = 1
 anchors_preset = 9
 anchor_bottom = 1.0
@@ -497,7 +607,7 @@ texture = ExtResource("8_l02gy")
 expand_mode = 2
 stretch_mode = 5
 
-[node name="Label" type="Label" parent="Door/Cracks" unique_id=418854130]
+[node name="Label" type="Label" parent="Door/Level" unique_id=418854130]
 layout_mode = 1
 anchors_preset = -1
 anchor_right = 1.0
@@ -513,9 +623,9 @@ custom_minimum_size = Vector2(0, 25)
 layout_mode = 1
 anchor_left = 0.776
 anchor_right = 0.776
-offset_left = -36.260002
+offset_left = -42.64801
 offset_top = 33.0
-offset_right = 22.239998
+offset_right = 32.35199
 offset_bottom = 58.0
 grow_horizontal = 2
 
@@ -536,36 +646,37 @@ layout_mode = 1
 anchors_preset = -1
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 27.0
+offset_left = 28.0
 offset_top = -2.0
-offset_right = -1.0
+offset_right = 2.0
 offset_bottom = -2.0
 grow_horizontal = 0
 grow_vertical = 2
-text = "1|2"
+text = "10 сек"
+horizontal_alignment = 1
 vertical_alignment = 1
 
 [node name="Healing" type="ProgressBar" parent="Door/Heart" unique_id=81831864]
 layout_mode = 0
 offset_left = 5.0
 offset_top = 23.0
-offset_right = 54.0
+offset_right = 75.0
 offset_bottom = 27.0
 theme = SubResource("Theme_ry3e3")
 show_percentage = false
 
 [node name="Damage" type="ProgressBar" parent="Door/Heart" unique_id=1410057471]
 layout_mode = 0
-offset_left = 54.0
-offset_top = 27.0
-offset_right = 103.0
-offset_bottom = 31.0
+offset_left = 75.0
+offset_top = 27.000002
+offset_right = 145.0
+offset_bottom = 31.000002
 rotation = 3.1415927
 theme = SubResource("Theme_acx8x")
-value = 3.13
 show_percentage = false
 
 [node name="Pawn" type="Control" parent="." unique_id=418602729]
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -600,28 +711,28 @@ offset_bottom = -2.0
 grow_vertical = 0
 columns = 2
 
-[node name="Control" type="Control" parent="Pawn/GridContainer" unique_id=252792253]
+[node name="OXYGEN_loss" type="Control" parent="Pawn/GridContainer" unique_id=252792253]
 custom_minimum_size = Vector2(0, 23)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Control" type="Control" parent="Pawn/GridContainer/Control" unique_id=1795775895]
+[node name="Control" type="Control" parent="Pawn/GridContainer/OXYGEN_loss" unique_id=1795775895]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 22.0
 grow_horizontal = 2
 
-[node name="Logo" type="TextureRect" parent="Pawn/GridContainer/Control/Control" unique_id=1601543354]
+[node name="Logo" type="TextureRect" parent="Pawn/GridContainer/OXYGEN_loss/Control" unique_id=1601543354]
 layout_mode = 1
 anchors_preset = 9
 anchor_bottom = 1.0
 offset_right = 22.0
 grow_vertical = 2
-texture = ExtResource("5_acx8x")
+texture = ExtResource("2_w3r4f")
 expand_mode = 2
 
-[node name="Label" type="Label" parent="Pawn/GridContainer/Control/Control" unique_id=2111120812]
+[node name="Label" type="Label" parent="Pawn/GridContainer/OXYGEN_loss/Control" unique_id=2111120812]
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.386
@@ -636,19 +747,19 @@ grow_vertical = 2
 text = "-12"
 vertical_alignment = 1
 
-[node name="Control2" type="Control" parent="Pawn/GridContainer" unique_id=311908363]
+[node name="PAWNS_loss" type="Control" parent="Pawn/GridContainer" unique_id=311908363]
 custom_minimum_size = Vector2(0, 23)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Control" type="Control" parent="Pawn/GridContainer/Control2" unique_id=1600502048]
+[node name="Control" type="Control" parent="Pawn/GridContainer/PAWNS_loss" unique_id=1600502048]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 22.0
 grow_horizontal = 2
 
-[node name="Logo" type="TextureRect" parent="Pawn/GridContainer/Control2/Control" unique_id=1738942669]
+[node name="Logo" type="TextureRect" parent="Pawn/GridContainer/PAWNS_loss/Control" unique_id=1738942669]
 layout_mode = 1
 anchors_preset = 9
 anchor_bottom = 1.0
@@ -657,7 +768,7 @@ grow_vertical = 2
 texture = ExtResource("6_nws1o")
 expand_mode = 2
 
-[node name="Label" type="Label" parent="Pawn/GridContainer/Control2/Control" unique_id=119424150]
+[node name="Label" type="Label" parent="Pawn/GridContainer/PAWNS_loss/Control" unique_id=119424150]
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.386
@@ -672,55 +783,19 @@ grow_vertical = 2
 text = "-12"
 vertical_alignment = 1
 
-[node name="Control3" type="Control" parent="Pawn/GridContainer" unique_id=1390945960]
+[node name="FIRE_loss" type="Control" parent="Pawn/GridContainer" unique_id=1390945960]
 custom_minimum_size = Vector2(0, 23)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Control" type="Control" parent="Pawn/GridContainer/Control3" unique_id=1145385761]
+[node name="Control" type="Control" parent="Pawn/GridContainer/FIRE_loss" unique_id=1145385761]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
 offset_bottom = 22.0
 grow_horizontal = 2
 
-[node name="Logo" type="TextureRect" parent="Pawn/GridContainer/Control3/Control" unique_id=912365975]
-layout_mode = 1
-anchors_preset = 9
-anchor_bottom = 1.0
-offset_right = 22.0
-grow_vertical = 2
-texture = ExtResource("7_1v1av")
-expand_mode = 2
-
-[node name="Label" type="Label" parent="Pawn/GridContainer/Control3/Control" unique_id=1424935841]
-layout_mode = 1
-anchors_preset = -1
-anchor_left = 0.386
-anchor_top = -0.023000002
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -0.0020008087
-offset_top = 0.006000042
-offset_bottom = 0.5
-grow_horizontal = 0
-grow_vertical = 2
-text = "-12"
-vertical_alignment = 1
-
-[node name="Control4" type="Control" parent="Pawn/GridContainer" unique_id=2092912634]
-custom_minimum_size = Vector2(0, 23)
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="Control" type="Control" parent="Pawn/GridContainer/Control4" unique_id=131447935]
-layout_mode = 1
-anchors_preset = 10
-anchor_right = 1.0
-offset_bottom = 22.0
-grow_horizontal = 2
-
-[node name="Logo" type="TextureRect" parent="Pawn/GridContainer/Control4/Control" unique_id=876056522]
+[node name="Logo" type="TextureRect" parent="Pawn/GridContainer/FIRE_loss/Control" unique_id=912365975]
 layout_mode = 1
 anchors_preset = 9
 anchor_bottom = 1.0
@@ -729,7 +804,43 @@ grow_vertical = 2
 texture = ExtResource("3_l02gy")
 expand_mode = 2
 
-[node name="Label" type="Label" parent="Pawn/GridContainer/Control4/Control" unique_id=1890901292]
+[node name="Label" type="Label" parent="Pawn/GridContainer/FIRE_loss/Control" unique_id=1424935841]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.386
+anchor_top = -0.023000002
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -0.0020008087
+offset_top = 0.006000042
+offset_bottom = 0.5
+grow_horizontal = 0
+grow_vertical = 2
+text = "-12"
+vertical_alignment = 1
+
+[node name="AID_STATION_income" type="Control" parent="Pawn/GridContainer" unique_id=2092912634]
+custom_minimum_size = Vector2(0, 23)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Control" type="Control" parent="Pawn/GridContainer/AID_STATION_income" unique_id=131447935]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 22.0
+grow_horizontal = 2
+
+[node name="Logo" type="TextureRect" parent="Pawn/GridContainer/AID_STATION_income/Control" unique_id=876056522]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 22.0
+grow_vertical = 2
+texture = ExtResource("10_1v1av")
+expand_mode = 2
+
+[node name="Label" type="Label" parent="Pawn/GridContainer/AID_STATION_income/Control" unique_id=1890901292]
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.386

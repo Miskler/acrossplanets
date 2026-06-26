@@ -344,15 +344,18 @@ static func get_invalid_worker_ids(
 
 		var task: Dictionary = pawn["task"]
 		var task_type: String = task.get("type", "")
-		var target_cell: Vector2i = task["target_cell"]
 
 		match task_type:
 			TASK_FIRE:
-				if not fires.has(target_cell):
+				var fire_cell: Vector2i = task["target_cell"]
+
+				if not fires.has(fire_cell):
 					result.append(pawn_id)
 
 			TASK_HULL_REPAIR:
-				if not hull_holes.has(target_cell):
+				var hole_cell: Vector2i = task["target_cell"]
+
+				if not hull_holes.has(hole_cell):
 					result.append(pawn_id)
 
 	return result
