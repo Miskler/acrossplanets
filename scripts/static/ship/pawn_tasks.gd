@@ -18,14 +18,14 @@ const STATE_WORKING: String = "working"
 
 
 static func create_task_orders(
-	foundation_layer: TileMapLayer,
 	rooms: Array[Dictionary],
 	pawns: Dictionary,
 	fires: Dictionary,
 	hull_holes: Dictionary,
 	owner_starship: String,
 	room_integrity_by_room: Dictionary = {},
-	room_integrity_max_by_room: Dictionary = {}
+	room_integrity_max_by_room: Dictionary = {},
+	room_power_by_room: Dictionary = {}
 ) -> Array[Dictionary]:
 	var orders: Array[Dictionary] = []
 	var target_reservations: Dictionary = {}
@@ -37,9 +37,7 @@ static func create_task_orders(
 		if pawn["state"] != STATE_IDLE:
 			continue
 
-		var pawn_cell: Vector2i = foundation_layer.local_to_map(
-			pawn_node.position
-		)
+		var pawn_cell: Vector2i = pawn["cells"][0]
 
 		var room_id: int = get_room_id_by_cell(rooms, pawn_cell)
 
@@ -56,9 +54,11 @@ static func create_task_orders(
 				hull_holes,
 				room_id,
 				pawn_id,
+				pawn_cell,
 				target_reservations,
 				room_integrity_by_room,
-				room_integrity_max_by_room
+				room_integrity_max_by_room,
+				room_power_by_room
 			)
 		else:
 			task = get_room_destroy_task_for_room(
@@ -105,9 +105,11 @@ static func get_best_task_for_room(
 	hull_holes: Dictionary,
 	room_id: int,
 	pawn_id: String,
+	pawn_cell: Vector2i,
 	target_reservations: Dictionary,
 	room_integrity_by_room: Dictionary = {},
-	room_integrity_max_by_room: Dictionary = {}
+	room_integrity_max_by_room: Dictionary = {},
+	room_power_by_room: Dictionary = {}
 ) -> Dictionary:
 	var fire_task: Dictionary = get_fire_task_for_room(fires, room_id)
 
@@ -128,6 +130,7 @@ static func get_best_task_for_room(
 		pawns,
 		room_id,
 		pawn_id,
+		pawn_cell,
 		target_reservations,
 		room_integrity_by_room,
 		room_integrity_max_by_room
@@ -141,7 +144,8 @@ static func get_best_task_for_room(
 		pawns,
 		room_id,
 		pawn_id,
-		target_reservations
+		target_reservations,
+		room_power_by_room
 	)
 
 	if not station_task.is_empty():
@@ -194,6 +198,7 @@ static func get_room_repair_task_for_room(
 	pawns: Dictionary,
 	room_id: int,
 	pawn_id: String,
+	pawn_cell: Vector2i,
 	target_reservations: Dictionary,
 	room_integrity_by_room: Dictionary,
 	room_integrity_max_by_room: Dictionary
@@ -207,34 +212,75 @@ static func get_room_repair_task_for_room(
 	if integrity >= integrity_max:
 		return {}
 
-	var room: Dictionary = rooms[room_id]
-	var main_cell: Variant = room["floor_main"]
+	var target_cell: Vector2i = get_room_repair_target_cell_for_pawn(
+		rooms,
+		pawns,
+		room_id,
+		pawn_id,
+		pawn_cell,
+		target_reservations
+	)
 
-	if main_cell == null:
-		return {}
-
-	var target_cell: Vector2i = main_cell
-
-	if target_reservations.has(target_cell):
-		return {}
-
-	if is_cell_reserved_by_other_pawn(pawns, target_cell, pawn_id):
+	if target_cell == Vector2i(-999999, -999999):
 		return {}
 
 	return {
 		"type": TASK_ROOM_REPAIR,
 		"priority": 30,
 		"room_id": room_id,
-		"target_cell": target_cell
+		"target_cell": target_cell,
+		"reserved_target_cell": target_cell
 	}
 
+
+static func get_room_repair_target_cell_for_pawn(
+	rooms: Array[Dictionary],
+	pawns: Dictionary,
+	room_id: int,
+	pawn_id: String,
+	pawn_cell: Vector2i,
+	target_reservations: Dictionary
+) -> Vector2i:
+	var room: Dictionary = rooms[room_id]
+	var station_cell: Vector2i = room.get("station_cell", pawn_cell)
+	var best_cell: Vector2i = Vector2i(-999999, -999999)
+	var best_score: int = 2147483647
+	var candidates: Array[Vector2i] = []
+	var main_cell: Variant = room["floor_main"]
+
+	if main_cell != null:
+		candidates.append(main_cell)
+
+	for cell: Vector2i in room["floor_cells"]:
+		if cell in candidates:
+			continue
+
+		candidates.append(cell)
+
+	for cell: Vector2i in candidates:
+		if target_reservations.has(cell):
+			continue
+
+		if is_cell_reserved_by_other_pawn(pawns, cell, pawn_id):
+			continue
+
+		var station_distance: int = absi(cell.x - station_cell.x) + absi(cell.y - station_cell.y)
+		var pawn_distance: int = absi(cell.x - pawn_cell.x) + absi(cell.y - pawn_cell.y)
+		var score: int = station_distance * 1000 + pawn_distance
+
+		if score < best_score:
+			best_score = score
+			best_cell = cell
+
+	return best_cell
 
 static func get_station_task_for_room(
 	rooms: Array[Dictionary],
 	pawns: Dictionary,
 	room_id: int,
 	pawn_id: String,
-	target_reservations: Dictionary
+	target_reservations: Dictionary,
+	room_power_by_room: Dictionary = {}
 ) -> Dictionary:
 	var room: Dictionary = rooms[room_id]
 
@@ -242,6 +288,9 @@ static func get_station_task_for_room(
 		return {}
 
 	if room.get("kind", null) == null:
+		return {}
+
+	if not room_power_by_room.is_empty() and int(room_power_by_room.get(room_id, 0)) <= 0:
 		return {}
 
 	var main_cell: Variant = room["floor_main"]
@@ -418,6 +467,7 @@ static func create_battle_task_orders(
 			rooms,
 			pawns,
 			pawn_id,
+			pawn_cell,
 			room_id
 		)
 
@@ -443,9 +493,9 @@ static func get_nearest_enemy_pawn_id_in_room(
 	rooms: Array[Dictionary],
 	pawns: Dictionary,
 	pawn_id: String,
+	pawn_cell: Vector2i,
 	room_id: int
 ) -> String:
-	var pawn_cell: Vector2i = pawns[pawn_id]["cells"][0]
 
 	var nearest_pawn_id: String = ""
 	var nearest_distance: int = 2147483647
@@ -473,6 +523,7 @@ static func get_nearest_enemy_pawn_id_in_room(
 			nearest_pawn_id = other_id
 
 	return nearest_pawn_id
+
 
 static func pawns_are_enemies(
 	pawns: Dictionary,

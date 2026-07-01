@@ -470,7 +470,7 @@ func _get_pawn_task_look_vector(
 	pawn_id: String,
 	task: Dictionary
 ) -> Vector2:
-	var pawn_cell: Vector2i = _pawn_position_to_foundation_cell(pawn_id)
+	var pawn_cell: Vector2i = pawns[pawn_id]["cells"][0]
 
 	var task_type: String = task.get("type", "")
 
@@ -550,6 +550,11 @@ func _on_pawn_movement_finished(pawn_id: String) -> void:
 	var after_move_task: Dictionary = movement_task.get("after_move_task", {})
 
 	if not after_move_task.is_empty():
+		if after_move_task.get("type", "") == PawnTaskLogic.TASK_STATION:
+			if not _station_task_can_start(after_move_task):
+				_set_pawn_idle(pawn_id)
+				return
+
 		if not after_move_task.has("lock"):
 			after_move_task["lock"] = movement_task.get(
 				"lock",
@@ -566,6 +571,7 @@ func _on_pawn_movement_finished(pawn_id: String) -> void:
 		return
 
 	_set_pawn_idle(pawn_id)
+
 
 func recalc_rooms() -> Array[Dictionary]:
 	var rooms_data: Dictionary = ShipRooms.validate(foundation_layer, SAMPLES_PER_TILE)
@@ -2217,6 +2223,7 @@ func _door_is_visible_to_player(door_cells: Array) -> bool:
 	return false
 
 
+
 func get_visible_pawn_id_at_cell(cell: Vector2i) -> String:
 	for pawn_id: String in pawns.keys():
 		if _pawn_position_to_foundation_cell(pawn_id) == cell and _pawn_is_friendly_to_ship(pawn_id):
@@ -2280,50 +2287,20 @@ func _door_cell_is_visible_to_player(door_cell: Vector2i) -> bool:
 	return false
 
 
-func _get_visible_fire_cells_in_room(room_id: int) -> Array[Vector2i]:
-	var result: Array[Vector2i] = []
-
-	for fire_cell: Vector2i in fires.keys():
-		var fire: Node2D = fires[fire_cell]["node"]
-
-		if int(fire.get_meta("room")) == room_id:
-			result.append(fire_cell)
-
-	return result
-
-
-func _get_visible_hull_hole_cells_in_room(room_id: int) -> Array[Vector2i]:
-	var result: Array[Vector2i] = []
-	var room: Dictionary = rooms[room_id]
-
-	for hole_cell: Vector2i in hull_holes.keys():
-		if hole_cell in room["floor_cells"]:
-			result.append(hole_cell)
-
-	return result
-
-
-func _get_visible_pawn_ids_in_room(room_id: int) -> Array[String]:
-	var result: Array[String] = []
-
-	for pawn_id: String in pawns.keys():
-		if cell_to_room(_pawn_position_to_foundation_cell(pawn_id)) == room_id:
-			result.append(pawn_id)
-
-	return result
 
 
 func _assign_idle_pawn_tasks() -> void:
 	var orders: Array[Dictionary] = PawnTaskLogic.create_task_orders(
-		foundation_layer,
 		rooms,
 		pawns,
 		fires,
 		hull_holes,
 		starship_uuid,
 		room_integrity_by_room,
-		room_integrity_max_by_room
+		room_integrity_max_by_room,
+		room_current_power_by_room
 	)
+	var delayed_station_orders: Array[Dictionary] = []
 
 	for order: Dictionary in orders:
 		var pawn_id: String = order["pawn_id"]
@@ -2343,13 +2320,29 @@ func _assign_idle_pawn_tasks() -> void:
 				_start_pawn_work(pawn_id, task)
 
 			PawnTaskLogic.TASK_ROOM_REPAIR:
-				_start_station_task(pawn_id, task)
+				_start_pawn_task_at_target_cell(pawn_id, task)
 
 			PawnTaskLogic.TASK_STATION:
-				_start_station_task(pawn_id, task)
+				delayed_station_orders.append(order)
 
 			PawnTaskLogic.TASK_ROOM_DESTROY:
 				_start_pawn_work(pawn_id, task)
+
+
+	for order: Dictionary in delayed_station_orders:
+		var pawn_id: String = order["pawn_id"]
+		var task: Dictionary = order["task"]
+
+		if not pawns.has(pawn_id):
+			continue
+
+		if pawns[pawn_id]["state"] != "idle":
+			continue
+
+		if not _station_task_can_start(task):
+			continue
+
+		_start_station_task(pawn_id, task)
 
 
 func _start_pawn_work(pawn_id: String, task: Dictionary) -> void:
@@ -2363,8 +2356,14 @@ func _start_pawn_work(pawn_id: String, task: Dictionary) -> void:
 
 
 func _start_station_task(pawn_id: String, task: Dictionary) -> void:
-	var pawn_cell: Vector2i = _pawn_position_to_foundation_cell(pawn_id)
+	if task.get("type", "") == PawnTaskLogic.TASK_STATION and not _station_task_can_start(task):
+		return
 
+	_start_pawn_task_at_target_cell(pawn_id, task)
+
+
+func _start_pawn_task_at_target_cell(pawn_id: String, task: Dictionary) -> void:
+	var pawn_cell: Vector2i = pawns[pawn_id]["cells"][0]
 	var target_cell: Vector2i = task["target_cell"]
 
 	if pawn_cell == target_cell:
@@ -2372,6 +2371,18 @@ func _start_station_task(pawn_id: String, task: Dictionary) -> void:
 		return
 
 	pawn_to_cell(pawn_id, target_cell, task)
+
+
+func _station_task_can_start(task: Dictionary) -> bool:
+	if task.get("type", "") != PawnTaskLogic.TASK_STATION:
+		return true
+
+	var room_id: int = int(task.get("room_id", -1))
+
+	if room_id < 0:
+		return false
+
+	return _room_is_powered(room_id)
 
 
 func _cleanup_finished_tasks() -> void:
@@ -2773,10 +2784,12 @@ func get_player_room_target_cell(
 	if melee_damage <= remote_damage:
 		return selected_cell
 
+	var pawn_cell: Vector2i = pawns[pawn_id]["cells"][0]
 	var target_pawn_id: String = PawnTaskLogic.get_nearest_enemy_pawn_id_in_room(
 		rooms,
 		pawns,
 		pawn_id,
+		pawn_cell,
 		room_id
 	)
 
@@ -2809,11 +2822,11 @@ func _refresh_battle_tasks() -> void:
 		var pawn_id: String = order["pawn_id"]
 		var task: Dictionary = order["task"]
 
-		battle_pawn_ids[pawn_id] = true
-
 		if not pawns.has(pawn_id):
 			continue
 
+
+		battle_pawn_ids[pawn_id] = true
 		_start_or_update_battle_task(pawn_id, task)
 
 	for pawn_id: String in pawns.keys():
@@ -2821,6 +2834,7 @@ func _refresh_battle_tasks() -> void:
 			continue
 
 		_stop_battle_if_needed(pawn_id)
+
 
 func _start_or_update_battle_task(
 	pawn_id: String,
@@ -2833,6 +2847,7 @@ func _start_or_update_battle_task(
 		return
 
 	var target_pawn_id: String = task["target_pawn_id"]
+
 
 	var pawn_cell: Vector2i = pawns[pawn_id]["cells"][0]
 	var target_cell: Vector2i = pawns[target_pawn_id]["cells"][0]
@@ -3036,12 +3051,22 @@ func _stop_battle_if_needed(pawn_id: String) -> void:
 
 	var task: Dictionary = pawns[pawn_id]["task"]
 
-	if task.get("type", "") != PawnTaskLogic.TASK_BATTLE:
+	if task.get("type", "") == PawnTaskLogic.TASK_BATTLE:
+		_set_pawn_idle(pawn_id)
+		pawn_battle_attack_timers.erase(pawn_id)
+		pawns[pawn_id]["node"].set_animation(
+			pawns[pawn_id]["node"].direction,
+			"standing"
+		)
+		return
+
+	var after_move_task: Dictionary = task.get("after_move_task", {})
+
+	if after_move_task.get("type", "") != PawnTaskLogic.TASK_BATTLE:
 		return
 
 	_set_pawn_idle(pawn_id)
 	pawn_battle_attack_timers.erase(pawn_id)
-
 	pawns[pawn_id]["node"].set_animation(
 		pawns[pawn_id]["node"].direction,
 		"standing"
@@ -3188,7 +3213,7 @@ func _friendly_pawn_already_approaches_battle_target(
 				continue
 
 			if other_task.get("target_pawn_id", "") == target_pawn_id:
-				var other_cell: Vector2i = _pawn_position_to_foundation_cell(other_id)
+				var other_cell: Vector2i = pawns[other_id]["cells"][0]
 
 				if other_cell == target_cell:
 					return true
@@ -3339,12 +3364,12 @@ func _interrupt_room_workers_for_priority_tasks() -> bool:
 			continue
 
 		if task_type == PawnTaskLogic.TASK_STATION:
-			if _room_has_fire(room_id) or _room_has_hull_hole(room_id) or _room_needs_repair(room_id):
+			if not _room_is_powered(room_id) or _room_has_fire(room_id) or _room_has_hull_hole(room_id) or _room_needs_repair(room_id):
 				_set_pawn_idle(pawn_id)
 				interrupted = true
 
 		elif task_type == PawnTaskLogic.TASK_ROOM_REPAIR:
-			if _room_has_fire(room_id) or _room_has_hull_hole(room_id) or not _room_needs_repair(room_id):
+			if cell_to_room(pawns[pawn_id]["cells"][0]) != room_id or _room_has_fire(room_id) or _room_has_hull_hole(room_id) or not _room_needs_repair(room_id):
 				_set_pawn_idle(pawn_id)
 				interrupted = true
 
@@ -3449,7 +3474,7 @@ func get_specialized_rooms_state() -> Array[Dictionary]:
 			"opened_max_level": int(room_unlocked_max_power_by_room.get(room_id, 0)),
 			"max_level": int(room_max_power_by_room.get(room_id, 0)),
 			"health": _get_room_health_level(room_id),
-			"fortitude": float(room_fortitude_by_room.get(room_id, room_fortitude_max)),
+			"fortitude": _get_room_fortitude_percent(room_id),
 			"energy": int(room_current_power_by_room.get(room_id, 0))
 		})
 
@@ -3461,6 +3486,21 @@ func get_ship_power_state() -> Dictionary:
 		"available": int(ship_power_available),
 		"used": int(ship_power_used)
 	}
+
+
+func _get_room_fortitude_percent(room_id: int) -> float:
+	var fortitude: float = float(room_fortitude_by_room.get(room_id, room_fortitude_max))
+
+	if fortitude <= room_fortitude_max:
+		if room_fortitude_max <= 0.0:
+			return 0.0
+
+		return clampf(fortitude / room_fortitude_max * 100.0, 0.0, 100.0)
+
+	if room_repair_fortitude_extra <= 0.0:
+		return 100.0
+
+	return clampf(100.0 + (fortitude - room_fortitude_max) / room_repair_fortitude_extra * 100.0, 100.0, 200.0)
 
 
 func _room_is_specialized(room_id: int) -> bool:
@@ -3481,7 +3521,7 @@ func _get_room_id_by_specialization(specialization: String) -> int:
 func _get_specialized_room_signal_state(room_id: int) -> Dictionary:
 	return {
 		"health": _get_room_health_level(room_id),
-		"fortitude": float(room_fortitude_by_room.get(room_id, room_fortitude_max)),
+		"fortitude": _get_room_fortitude_percent(room_id),
 		"energy": int(room_current_power_by_room.get(room_id, 0)),
 		"opened_max_level": int(room_unlocked_max_power_by_room.get(room_id, 0))
 	}
@@ -3822,7 +3862,7 @@ func _get_room_fortitude_damage_by_room() -> Dictionary:
 		if task.get("type", "") != PawnTaskLogic.TASK_ROOM_DESTROY:
 			continue
 
-		var pawn_cell: Vector2i = _pawn_position_to_foundation_cell(pawn_id)
+		var pawn_cell: Vector2i = pawns[pawn_id]["cells"][0]
 		var current_room_id: int = cell_to_room(pawn_cell)
 		var task_room_id: int = int(task["room_id"])
 
@@ -3853,7 +3893,7 @@ func _get_room_fortitude_repair_by_room() -> Dictionary:
 			continue
 
 		var task_room_id: int = int(task["room_id"])
-		var pawn_cell: Vector2i = _pawn_position_to_foundation_cell(pawn_id)
+		var pawn_cell: Vector2i = pawns[pawn_id]["cells"][0]
 
 		if cell_to_room(pawn_cell) != task_room_id:
 			continue
@@ -3873,7 +3913,7 @@ func _refresh_room_sabotage_keepers() -> void:
 			continue
 
 		var room_id: int = int(room_sabotage_pawn_room_by_id[pawn_id])
-		var pawn_cell: Vector2i = _pawn_position_to_foundation_cell(pawn_id)
+		var pawn_cell: Vector2i = pawns[pawn_id]["cells"][0]
 
 		if cell_to_room(pawn_cell) != room_id:
 			room_sabotage_pawn_room_by_id.erase(pawn_id)
@@ -3919,7 +3959,7 @@ func _cleanup_invalid_room_repair_workers() -> void:
 
 		var room_id: int = int(task["room_id"])
 
-		if not _room_needs_repair(room_id):
+		if cell_to_room(pawns[pawn_id]["cells"][0]) != room_id or not _room_needs_repair(room_id):
 			_set_pawn_idle(pawn_id)
 
 
