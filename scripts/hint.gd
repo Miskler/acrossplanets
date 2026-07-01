@@ -98,7 +98,7 @@ func render(data: Dictionary) -> void:
 				$Room/Grid/Total.text = "-"+str(total_minus[0])+"%+"+str(total_plus[0])+"%="+("+" if total > 0 else "")+str(total)+"%/сек"
 			
 			size = Vector2(210, 174)
-			size.y = max(calc_grid_offset(total_plus[1] + total_minus[1])+size.y, 137)
+			size.y = max(calc_grid_offset(total_plus[1] + total_minus[1])+size.y, size.y)
 		"door":
 			var to_title = ""
 			if data["info"]["broken"]:

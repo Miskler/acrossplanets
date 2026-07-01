@@ -1,7 +1,9 @@
 extends Control
 
 @onready var starship = get_node("../../Starship")
-@onready var services_box = get_node("Services/Box")
+@onready var services = get_node("Services")
+@onready var services_box = services.get_node("Box")
+const SERVICES_RIGHT_MARGIN := 8.0
 
 func _ready() -> void:
 	regen_services(starship.get_specialized_rooms_state())
@@ -28,3 +30,6 @@ func regen_services(data: Array[Dictionary]):
 		
 		new_room.show()
 		services_box.add_child(new_room)
+	
+	services.size.x = services_box.get_child_count() * sample.custom_minimum_size.x
+	services.position.x = get_viewport_rect().size.x - services.size.x - SERVICES_RIGHT_MARGIN

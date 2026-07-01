@@ -888,7 +888,7 @@ func get_door_info(door_cells: Array) -> Dictionary:
 	
 	return {
 		"hidden": false,
-		"level": int(starship.doors_level),
+		"level": int(starship._get_effective_doors_level()),
 		"fortress": _get_door_fortress_percent(door_key),
 		"open": is_open,
 		"broken": cooldown > 0.0,
@@ -1393,13 +1393,7 @@ func _get_room_fires_count(room_id: int) -> int:
 
 
 func _get_current_door_max_hp_for_info() -> float:
-	var starship: Node = get_parent()
-	var index: int = clampi(
-		int(starship.doors_level),
-		0,
-		starship.health_doors_levels_map.size() - 1
-	)
-	return float(starship.health_doors_levels_map[index])
+	return float(get_parent()._get_current_door_max_hp())
 
 
 func _info_door_cells_key(door_cells: Array) -> String:

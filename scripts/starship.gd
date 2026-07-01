@@ -89,8 +89,6 @@ var pawn_task_recheck_timer: float = 0.0
 var hull_holes: Dictionary = {}
 var hull_repair_progress: Dictionary = {}
 
-var doors_level: int = 0
-var doors_disconnected_level: int = 0
 var fortress_doors_disconnected_level: float = 1.0
 var health_doors_disconnected_level: int = 10
 var cooldown_doors_disconnected_level: float = 0.0
@@ -960,46 +958,47 @@ func _apply_door_recolor_shader() -> void:
 
 
 func _get_current_door_color() -> Color:
-	if _doors_system_is_disconnected():
+	var level: int = _get_effective_doors_level()
+
+	if level < 0:
 		return color_doors_disconnected_level
 
-	return color_doors_levess_map[
-		clampi(doors_level, 0, color_doors_levess_map.size() - 1)
-	]
+	return color_doors_levess_map[_get_effective_doors_level_index(color_doors_levess_map.size())]
 
 
 func _get_current_door_max_hp() -> float:
-	if _doors_system_is_disconnected():
+	var level: int = _get_effective_doors_level()
+
+	if level < 0:
 		return float(health_doors_disconnected_level)
 
-	return float(health_doors_levels_map[
-		clampi(doors_level, 0, health_doors_levels_map.size() - 1)
-	])
+	return float(health_doors_levels_map[_get_effective_doors_level_index(health_doors_levels_map.size())])
 
 
 func _get_current_door_close_cooldown() -> float:
-	if _doors_system_is_disconnected():
+	var level: int = _get_effective_doors_level()
+
+	if level < 0:
 		return cooldown_doors_disconnected_level
 
-	return float(cooldown_doors_levels_map[
-		clampi(doors_level, 0, cooldown_doors_levels_map.size() - 1)
-	])
+	return float(cooldown_doors_levels_map[_get_effective_doors_level_index(cooldown_doors_levels_map.size())])
 
 
 func _get_current_door_fire_spread_chance() -> float:
-	if _doors_system_is_disconnected():
+	var level: int = _get_effective_doors_level()
+
+	if level < 0:
 		return fortress_doors_disconnected_level
 
-	return float(fortress_doors_levels_map[
-		clampi(doors_level, 0, fortress_doors_levels_map.size() - 1)
-	])
+	return float(fortress_doors_levels_map[_get_effective_doors_level_index(fortress_doors_levels_map.size())])
 
 
 func _get_effective_doors_level() -> int:
-	if _doors_system_is_disconnected():
-		return doors_disconnected_level
+	return _get_room_kind_max_power("doors") - 1
 
-	return doors_level
+
+func _get_effective_doors_level_index(map_size: int) -> int:
+	return clampi(_get_effective_doors_level(), 0, map_size - 1)
 
 
 func _get_door_action_time_for_pawn(pawn_id: String) -> float:
@@ -1888,7 +1887,7 @@ func _doors_station_is_working() -> bool:
 
 
 func _doors_system_is_disconnected() -> bool:
-	return not _room_kind_has_power("doors")
+	return _get_effective_doors_level() < 0
 
 
 func _cameras_system_is_powered() -> bool:
@@ -1896,14 +1895,19 @@ func _cameras_system_is_powered() -> bool:
 
 
 func _room_kind_has_power(kind: String) -> bool:
+	return _get_room_kind_max_power(kind) > 0
+
+
+func _get_room_kind_max_power(kind: String) -> int:
+	var result: int = 0
+
 	for room_id: int in range(rooms.size()):
 		if not _room_kind_is(room_id, kind):
 			continue
 
-		if _room_is_powered(room_id):
-			return true
+		result = maxi(result, int(room_current_power_by_room.get(room_id, 0)))
 
-	return false
+	return result
 
 
 func _room_is_powered(room_id: int) -> bool:
