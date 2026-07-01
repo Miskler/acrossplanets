@@ -8,7 +8,7 @@ signal delete_pawn_event(node, uuid)
 
 signal room_hp_changed(room_id: int, hp: float)
 signal room_hp_depleted(room_id: int)
-signal specialized_room_state_changed(specialization: String, health: float, fortitude: float, energy: int, opened_max_level: int)
+signal specialized_room_state_changed(specialization: String, health: int, fortitude: float, energy: int, opened_max_level: int)
 
 @export var pawns2spawn: Array[Dictionary] = [{"race": "human"}, {"race": "human"}, {"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
 
@@ -111,7 +111,6 @@ var pawn_battle_attack_timers: Dictionary = {}
 @export var room_hp_max: float = 100.0
 @export var room_fire_damage_per_second: float = 8.0
 
-var room_hp_by_room: Dictionary = {}
 var depleted_room_ids: Dictionary = {}
 
 var door_hp_by_key: Dictionary = {}
@@ -2251,7 +2250,7 @@ func get_room_hint_data(room_id: int) -> Dictionary:
 		"area": int(room["sample_cells_count"]),
 		"kind": room.get("kind", null),
 		"kinds": room.get("kinds", []),
-		"hp": float(room_hp_by_room.get(room_id, room_hp_max)),
+		"hp": _get_room_hp_percent(room_id),
 		"integrity": int(room_integrity_by_room.get(room_id, room_integrity_max_default)),
 		"integrity_max": int(room_integrity_max_by_room.get(room_id, room_integrity_max_default)),
 		"fortitude": float(room_fortitude_by_room.get(room_id, room_fortitude_max)),
@@ -3490,7 +3489,6 @@ func _room_needs_repair(room_id: int) -> bool:
 	return int(room_integrity_by_room.get(room_id, room_integrity_max_default)) < int(room_integrity_max_by_room.get(room_id, room_integrity_max_default))
 
 func setup_room_hp() -> void:
-	room_hp_by_room = {}
 	depleted_room_ids = {}
 	room_integrity_by_room = {}
 	room_integrity_max_by_room = {}
@@ -3515,7 +3513,6 @@ func setup_room_hp() -> void:
 		room_integrity_max_by_room[room_id] = integrity_max
 		room_integrity_by_room[room_id] = integrity_max
 		room_fortitude_by_room[room_id] = room_fortitude_max
-		room_hp_by_room[room_id] = room_hp_max
 		room_max_power_by_room[room_id] = max_power
 		room_unlocked_max_power_by_room[room_id] = unlocked_power
 		room_current_power_by_room[room_id] = 0
@@ -3525,6 +3522,16 @@ func setup_room_hp() -> void:
 
 func _get_room_integrity_max(room_id: int) -> int:
 	return maxi(room_integrity_max_default, 1)
+
+
+func _get_room_health_level(room_id: int) -> int:
+	return int(room_integrity_by_room.get(room_id, room_integrity_max_default))
+
+
+func _get_room_hp_percent(room_id: int) -> float:
+	var integrity: int = _get_room_health_level(room_id)
+	var integrity_max: int = int(room_integrity_max_by_room.get(room_id, room_integrity_max_default))
+	return room_hp_max * float(integrity) / float(maxi(integrity_max, 1))
 
 
 func _get_room_station_max_power(room_id: int) -> int:
@@ -3557,7 +3564,9 @@ func get_specialized_rooms_state() -> Array[Dictionary]:
 		result.append({
 			"specialization": str(rooms[room_id]["kind"]),
 			"opened_max_level": int(room_unlocked_max_power_by_room.get(room_id, 0)),
-			"health": float(room_hp_by_room.get(room_id, room_hp_max)),
+			"max_level": int(room_max_power_by_room.get(room_id, 0)),
+			"health": _get_room_health_level(room_id),
+			"fortitude": float(room_fortitude_by_room.get(room_id, room_fortitude_max)),
 			"energy": int(room_current_power_by_room.get(room_id, 0))
 		})
 
@@ -3588,7 +3597,7 @@ func _get_room_id_by_specialization(specialization: String) -> int:
 
 func _get_specialized_room_signal_state(room_id: int) -> Dictionary:
 	return {
-		"health": float(room_hp_by_room.get(room_id, room_hp_max)),
+		"health": _get_room_health_level(room_id),
 		"fortitude": float(room_fortitude_by_room.get(room_id, room_fortitude_max)),
 		"energy": int(room_current_power_by_room.get(room_id, 0)),
 		"opened_max_level": int(room_unlocked_max_power_by_room.get(room_id, 0))
@@ -3610,7 +3619,7 @@ func _emit_specialized_room_state_updates() -> void:
 		emit_signal(
 			"specialized_room_state_changed",
 			specialization,
-			float(state["health"]),
+			int(state["health"]),
 			float(state["fortitude"]),
 			int(state["energy"]),
 			int(state["opened_max_level"])
@@ -3898,12 +3907,9 @@ func process_room_systems(delta: float) -> void:
 
 
 func _emit_room_integrity_changed(room_id: int) -> void:
-	var integrity: int = int(room_integrity_by_room.get(room_id, 0))
-	var integrity_max: int = int(room_integrity_max_by_room.get(room_id, 1))
-	var hp_value: float = room_hp_max * float(integrity) / float(maxi(integrity_max, 1))
-	room_hp_by_room[room_id] = hp_value
+	var integrity: int = _get_room_health_level(room_id)
 	depleted_room_ids.erase(room_id)
-	emit_signal("room_hp_changed", room_id, hp_value)
+	emit_signal("room_hp_changed", room_id, _get_room_hp_percent(room_id))
 
 	if integrity <= 0:
 		depleted_room_ids[room_id] = true

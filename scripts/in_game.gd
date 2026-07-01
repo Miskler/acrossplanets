@@ -7,12 +7,34 @@ const SERVICES_RIGHT_MARGIN := 8.0
 
 const ACTIVE_COLOR: Color = Color.WHITE
 const NON_ACTIVE_COLOR: Color = Color.DARK_GRAY
+const BROKEN_COLOR: Color = Color("ff0000")
 
 func _ready() -> void:
 	regen_services(starship.get_specialized_rooms_state())
 
 func _recalc_levels_state_service(node: VBoxContainer, energy: int, health: int, fortitude: float) -> void:
-	pass
+	var last_child_active = null
+	var last_child_non_active = null
+	var id = -1
+	var children = node.get_children()
+	children.reverse()
+	for child in children:
+		if child.name != "*Sample":
+			id += 1
+			child.get_node("Healing").value = 0
+			child.get_node("Damage").value = 0
+			
+			child.get_node("Active").color = BROKEN_COLOR if id >= health else (NON_ACTIVE_COLOR if id >= energy else ACTIVE_COLOR)
+			if id < health:
+				last_child_active = child
+			elif last_child_non_active == null:
+				last_child_non_active = child
+	
+	if fortitude != 100:
+		if fortitude < 100 and last_child_active != null:
+			last_child_active.get_node("Damage").value = 100 - fortitude
+		elif last_child_non_active != null:
+			last_child_non_active.get_node("Healing").value = fortitude - 100
 
 func _regen_levels_service(node: VBoxContainer, opened_max_level: int) -> void:
 	for child in node.get_children():
@@ -45,7 +67,9 @@ func regen_services(data: Array[Dictionary]):
 		new_room.get_node("Icon").texture = load("res://assets/consoles/icons/"+room_data["specialization"]+".png")
 		
 		print(room_data)
-		_regen_levels_service(new_room.get_node("Energy"), room_data["opened_max_level"])
+		var energy_node = new_room.get_node("Energy")
+		_regen_levels_service(energy_node, room_data["opened_max_level"])
+		_recalc_levels_state_service(energy_node, room_data["energy"], room_data["health"], room_data["fortitude"])
 		
 		new_room.set_meta("specialization", room_data["specialization"])
 		new_room.set_meta("opened_max_level", room_data["opened_max_level"])
@@ -66,7 +90,7 @@ func service_pressed(event: InputEvent, service_node: Control) -> void:
 		var new_value = service_node.get_meta("energy") + (1 if to_add else -1)
 		new_value = clamp(new_value, 0, service_node.get_meta("opened_max_level"))
 		
-		printt(starship.set_specialized_room_energy(service_node.get_meta("specialization"), new_value), service_node.get_meta("specialization"), new_value)
+		starship.set_specialized_room_energy(service_node.get_meta("specialization"), new_value)
 
 func service_changed(
 	specialization: String,
@@ -77,10 +101,10 @@ func service_changed(
 ) -> void:
 	var service_node: Control = get_node("Services/Box/"+specialization)
 	
+	var energy_node = service_node.get_node("Energy")
 	if opened_max_level != service_node.get_meta("opened_max_level"):
 		service_node.set_meta("opened_max_level", opened_max_level)
-		_regen_levels_service(service_node.get_node("Energy"), opened_max_level)
+		_regen_levels_service(energy_node, opened_max_level)
 	
 	service_node.set_meta("energy", energy)
-	
-#	if 
+	_recalc_levels_state_service(energy_node, energy, health, fortitude)
