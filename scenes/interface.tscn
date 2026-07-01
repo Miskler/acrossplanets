@@ -192,3 +192,28 @@ grow_vertical = 0
 pivot_offset = Vector2(25, 25)
 texture = ExtResource("2_lw6my")
 expand_mode = 4
+
+[node name="ShipEnergy" type="ColorRect" parent="InGame" unique_id=1918838572]
+layout_mode = 0
+offset_left = 1084.0
+offset_top = 476.0
+offset_right = 1142.0
+offset_bottom = 640.0
+color = Color(0, 0, 0, 1)
+
+[node name="Box" type="VBoxContainer" parent="InGame/ShipEnergy" unique_id=939718713]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = -10.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 2
+
+[node name="*Sample" type="ColorRect" parent="InGame/ShipEnergy/Box" unique_id=372037187]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2

@@ -1,9 +1,10 @@
 extends Control
 
-@onready var starship = get_node("../../Starship")
+@onready var starship: Starship = get_node("../../Starship")
 @onready var services = get_node("Services")
 @onready var services_box = services.get_node("Box")
-const SERVICES_RIGHT_MARGIN := 8.0
+@onready var ship_energy_box = get_node("ShipEnergy/Box")
+const SERVICES_RIGHT_MARGIN := 78.0
 
 const ACTIVE_COLOR: Color = Color.WHITE
 const NON_ACTIVE_COLOR: Color = Color.DARK_GRAY
@@ -11,6 +12,8 @@ const BROKEN_COLOR: Color = Color("ff0000")
 
 func _ready() -> void:
 	regen_services(starship.get_specialized_rooms_state())
+	var ship_power = starship.get_ship_power_state()
+	starship_energy_changed(ship_power["available"], ship_power["used"])
 
 func _recalc_levels_state_service(node: VBoxContainer, energy: int, health: int, fortitude: float) -> void:
 	var last_child_active = null
@@ -36,18 +39,29 @@ func _recalc_levels_state_service(node: VBoxContainer, energy: int, health: int,
 		elif last_child_non_active != null:
 			last_child_non_active.get_node("Healing").value = fortitude - 100
 
-func _regen_levels_service(node: VBoxContainer, opened_max_level: int) -> void:
+func _recalc_starship_energy(used: int) -> void:
+	var children = ship_energy_box.get_children()
+	var id = -1
+	for child in children:
+		if child.name != "*Sample":
+			id += 1
+			child.color = ACTIVE_COLOR if id >= used else NON_ACTIVE_COLOR
+
+func _regen_levels(node: VBoxContainer, opened_max_level: int, is_ship_energy: bool = false) -> void:
 	for child in node.get_children():
 		if child.name != "*Sample":
 			child.queue_free()
+		else:
+			child.hide()
 	
 	var level_sample: Control = node.get_node("*Sample")
 	for level in opened_max_level:
 		var new_level = level_sample.duplicate()
 		new_level.show()
-		new_level.get_node("Healing").value = 0
-		new_level.get_node("Damage").value = 0
-		new_level.get_node("Active").color = NON_ACTIVE_COLOR
+		if not is_ship_energy:
+			new_level.get_node("Healing").value = 0
+			new_level.get_node("Damage").value = 0
+			new_level.get_node("Active").color = NON_ACTIVE_COLOR
 		node.add_child(new_level)
 
 func regen_services(data: Array[Dictionary]):
@@ -56,6 +70,7 @@ func regen_services(data: Array[Dictionary]):
 			node.queue_free()
 	
 	starship.connect("specialized_room_state_changed", service_changed)
+	starship.connect("ship_power_state_changed", starship_energy_changed)
 	
 	var sample = services_box.get_node("*Sample")
 	sample.hide()
@@ -66,9 +81,8 @@ func regen_services(data: Array[Dictionary]):
 		new_room.name = room_data["specialization"]
 		new_room.get_node("Icon").texture = load("res://assets/consoles/icons/"+room_data["specialization"]+".png")
 		
-		print(room_data)
 		var energy_node = new_room.get_node("Energy")
-		_regen_levels_service(energy_node, room_data["opened_max_level"])
+		_regen_levels(energy_node, room_data["opened_max_level"])
 		_recalc_levels_state_service(energy_node, room_data["energy"], room_data["health"], room_data["fortitude"])
 		
 		new_room.set_meta("specialization", room_data["specialization"])
@@ -104,7 +118,12 @@ func service_changed(
 	var energy_node = service_node.get_node("Energy")
 	if opened_max_level != service_node.get_meta("opened_max_level"):
 		service_node.set_meta("opened_max_level", opened_max_level)
-		_regen_levels_service(energy_node, opened_max_level)
+		_regen_levels(energy_node, opened_max_level)
 	
 	service_node.set_meta("energy", energy)
 	_recalc_levels_state_service(energy_node, energy, health, fortitude)
+
+func starship_energy_changed(available: int, used: int) -> void:
+	if ship_energy_box.get_child_count()-1 != available:
+		_regen_levels(ship_energy_box, available, true)
+	_recalc_starship_energy(used)

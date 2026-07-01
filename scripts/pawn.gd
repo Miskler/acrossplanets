@@ -13,6 +13,7 @@ var animations: Dictionary = {
 
 const TEAM_COLORS: Dictionary[String, Array] = {
 	"user": [Color("0099b3"), Color("1886ff"), Color("6479ff")],
+	"friend": [Color("00a200ff"), Color("359b66ff"), Color("7e900bff")],
 	"enemy": [Color("fb005c"), Color("f53400"), Color("f7007c")]
 }
 var pawn_color: Dictionary = {}
@@ -29,6 +30,8 @@ var battle_damage_factor: float = 1
 var impact_engineering: int = 3 # заплатка пробоин, ремонт станций и их саботаж
 var impact_force: int = 3 # сила удара вблизи
 var impact_force_remotely: int = 3 # сила удара вдали
+var impact_extinguishing: float = 1 # скорость пожаротушения пешки
+var impact_administration: float = 0.5
 var move_speed_px: float = 80.0 # скорость передвижения
 var oxygen_consumption: float = 2.0 # потребления кислорода (можно поставить выработку если <0)
 var point_reach_distance_px: float = 1.0
@@ -96,6 +99,8 @@ func set_race(new_race: String):
 			impact_engineering = 3
 			impact_force = 3
 			impact_force_remotely = 2
+			impact_extinguishing = 1
+			impact_administration = 0.5
 			
 			max_health = 100
 			min_oxygen = 1
@@ -244,6 +249,12 @@ func get_impact_force() -> int:
 
 func get_impact_force_remotely() -> int:
 	return impact_force_remotely
+
+func get_impact_extinguishing() -> float:
+	return impact_extinguishing
+
+func get_impact_administration() -> float:
+	return impact_administration
 
 func get_move_speed_px() -> float:
 	return move_speed_px

@@ -45,8 +45,9 @@ static func create_task_orders(
 			continue
 
 		var task: Dictionary = {}
+		var pawn_starship: String = str(pawn_node.get_current_starship())
 
-		if pawn_node.control_is_available(owner_starship):
+		if pawn_starship == owner_starship:
 			task = get_best_task_for_room(
 				rooms,
 				pawns,
@@ -59,6 +60,13 @@ static func create_task_orders(
 				room_integrity_by_room,
 				room_integrity_max_by_room,
 				room_power_by_room
+			)
+		elif starships_are_friends(pawn_starship, owner_starship):
+			task = get_best_survival_task_for_room(
+				rooms,
+				fires,
+				hull_holes,
+				room_id
 			)
 		else:
 			task = get_room_destroy_task_for_room(
@@ -150,6 +158,29 @@ static func get_best_task_for_room(
 
 	if not station_task.is_empty():
 		return station_task
+
+	return {}
+
+
+static func get_best_survival_task_for_room(
+	rooms: Array[Dictionary],
+	fires: Dictionary,
+	hull_holes: Dictionary,
+	room_id: int
+) -> Dictionary:
+	var fire_task: Dictionary = get_fire_task_for_room(fires, room_id)
+
+	if not fire_task.is_empty():
+		return fire_task
+
+	var hull_repair_task: Dictionary = get_hull_repair_task_for_room(
+		rooms,
+		hull_holes,
+		room_id
+	)
+
+	if not hull_repair_task.is_empty():
+		return hull_repair_task
 
 	return {}
 
@@ -325,7 +356,9 @@ static func count_workers_by_target(
 		var pawn_node: Node2D = pawn["node"]
 		
 		if owner_starship != "":
-			if not pawn_node.control_is_available(owner_starship):
+			var pawn_starship: String = str(pawn_node.get_current_starship())
+
+			if not starships_are_friends(pawn_starship, owner_starship):
 				continue
 		
 		if pawn["state"] != STATE_WORKING:
@@ -357,7 +390,9 @@ static func count_workers_by_room(
 		var pawn_node: Node2D = pawn["node"]
 
 		if owner_starship != "":
-			if not pawn_node.control_is_available(owner_starship):
+			var pawn_starship: String = str(pawn_node.get_current_starship())
+
+			if not starships_are_friends(pawn_starship, owner_starship):
 				continue
 
 		if pawn["state"] != STATE_WORKING:
@@ -530,6 +565,58 @@ static func pawns_are_enemies(
 	pawn_id: String,
 	other_id: String
 ) -> bool:
-	var pawn_starship: String = pawns[pawn_id]["node"].get_current_starship()
+	var pawn_starship: String = str(pawns[pawn_id]["node"].get_current_starship())
+	var other_starship: String = str(pawns[other_id]["node"].get_current_starship())
 
-	return not pawns[other_id]["node"].control_is_available(pawn_starship)
+	return starships_are_enemies(pawn_starship, other_starship)
+
+
+static func pawn_belongs_to_starship(
+	pawns: Dictionary,
+	pawn_id: String,
+	starship_uuid: String
+) -> bool:
+	return str(pawns[pawn_id]["node"].get_current_starship()) == starship_uuid
+
+
+static func pawn_is_friend_to_starship(
+	pawns: Dictionary,
+	pawn_id: String,
+	starship_uuid: String
+) -> bool:
+	return starships_are_friends(
+		str(pawns[pawn_id]["node"].get_current_starship()),
+		starship_uuid
+	)
+
+
+static func starships_are_friends(
+	starship_uuid: String,
+	other_starship_uuid: String
+) -> bool:
+	return not starships_are_enemies(starship_uuid, other_starship_uuid)
+
+
+static func starships_are_enemies(
+	starship_uuid: String,
+	other_starship_uuid: String
+) -> bool:
+	if starship_uuid == other_starship_uuid:
+		return false
+
+	return (
+		_starship_has_enemy(starship_uuid, other_starship_uuid)
+		or _starship_has_enemy(other_starship_uuid, starship_uuid)
+	)
+
+
+static func _starship_has_enemy(
+	starship_uuid: String,
+	other_starship_uuid: String
+) -> bool:
+	if not GlobalBuffer.starships.has(starship_uuid):
+		return false
+
+	var enemies: Array = GlobalBuffer.starships[starship_uuid].get("enemies", [])
+
+	return enemies.has(other_starship_uuid)

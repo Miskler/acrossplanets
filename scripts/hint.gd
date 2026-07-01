@@ -110,7 +110,6 @@ func render(data: Dictionary) -> void:
 			else:
 				to_title = "Закрытая"
 			$Title.text = to_title+" дверь"
-			print(data["info"])
 			if data["info"]["level"] == -1:
 				$Title.text = $Title.text + " (обесточено)"
 			

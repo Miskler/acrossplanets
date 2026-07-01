@@ -16,6 +16,10 @@ config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 config/run/main_scene="res://scenes/interface.tscn"
 
+[autoload]
+
+GlobalBuffer="*uid://cw7ouvsmvi2gi"
+
 [display]
 
 window/size/mode=2

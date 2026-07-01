@@ -9,8 +9,9 @@ signal delete_pawn_event(node, uuid)
 signal room_hp_changed(room_id: int, hp: float)
 signal room_hp_depleted(room_id: int)
 signal specialized_room_state_changed(specialization: String, health: int, fortitude: float, energy: int, opened_max_level: int)
+signal ship_power_state_changed(available: int, used: int)
 
-@export var pawns2spawn: Array[Dictionary] = [{"race": "human"}, {"race": "human"}, {"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
+@export var pawns2spawn: Array[Dictionary] = [{"race": "human"}, {"race": "human", "starship": "friend"}, {"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
 
 @onready var foundation_layer = $Foundation
 @onready var stations_layer = $Stations
@@ -23,7 +24,7 @@ const SAMPLES_PER_TILE: int = 1
 
 var time2change_door_state = 0.2
 
-var starship_uuid: String = ""
+var starship_uuid: String = "user_ship"
 
 var rooms: Array[Dictionary] = []
 var pawns: Dictionary = {}
@@ -75,8 +76,6 @@ var pawn_environment_damage_timer: float = 0.0
 @export var pawn_healing_enabled: bool = true
 @export var pawn_healing_tick_interval: float = 0.25
 @export var medicine_healing_levels_map: Array = [0.0, 1.0, 2.0, 3.0, 4.0]
-@export var medicine_station_remote_healing_factor: float = 0.5
-
 var pawn_healing_progress_by_id: Dictionary = {}
 var pawn_healing_tick_timer: float = 0.0
 
@@ -173,6 +172,7 @@ var fire_visibility_by_cell: Dictionary = {}
 var fire_visibility_tweens_by_cell: Dictionary = {}
 @export var pawn_visibility_fade_time: float = 0.16
 var specialized_room_state_cache: Dictionary = {}
+var ship_power_state_cache: Dictionary = {}
 
 
 func _ready() -> void:
@@ -202,7 +202,6 @@ func _process(delta: float) -> void:
 	_process_room_visibility()
 
 func restart() -> void:
-	starship_uuid = NodeUUID.uuid_v4()
 	technical_layer.hide()
 	rooms = recalc_rooms()
 	setup_oxygen()
@@ -243,7 +242,11 @@ func add_pawn(pawn_data_or_race: Variant, starship: String = starship_uuid, over
 
 	var race: String = str(pawn_data["race"])
 	var pawn_starship: String = str(pawn_data.get("starship", starship_uuid))
-	var pawn_team: String = "user" if pawn_starship == starship_uuid else "enemy"
+	var pawn_team: String = "user"
+
+	if pawn_starship != starship_uuid:
+		pawn_team = "friend" if _starship_is_friendly_to_ship(pawn_starship) else "enemy"
+
 	var spawn_cell: Vector2i
 
 	if pawn_data.has("spawn_cell"):
@@ -357,14 +360,14 @@ func _on_pawn_action_required(
 	var action: String = step["action"]
 	var door_cells: Array = step["door_cells"]
 	var door_key: String = _door_cells_key(door_cells)
-	var is_hostile: bool = not _pawn_is_friendly_to_ship(pawn_id)
+	var is_enemy: bool = not _pawn_is_friendly_to_ship(pawn_id)
 
 	var task: Dictionary = pawns[pawn_id]["task"]
 
 	if not task.has("opened_doors"):
 		task["opened_doors"] = {}
 
-	if action == "open_door" and (is_hostile or _doors_system_is_disconnected()):
+	if action == "open_door" and (is_enemy or _doors_system_is_disconnected()):
 		var current_state_before_destroy: String = DoorManager.get_door_state(
 			foundation_layer,
 			door_cells
@@ -382,7 +385,7 @@ func _on_pawn_action_required(
 		)
 		return
 
-	if action == "close_door" and (is_hostile or _doors_system_is_disconnected()):
+	if action == "close_door" and (is_enemy or _doors_system_is_disconnected()):
 		_continue_pawn_move_after_action(pawn_id, next_step_index)
 		return
 
@@ -551,7 +554,7 @@ func _on_pawn_movement_finished(pawn_id: String) -> void:
 
 	if not after_move_task.is_empty():
 		if after_move_task.get("type", "") == PawnTaskLogic.TASK_STATION:
-			if not _station_task_can_start(after_move_task):
+			if not _station_task_can_start(after_move_task, pawn_id):
 				_set_pawn_idle(pawn_id)
 				return
 
@@ -769,7 +772,7 @@ func process_pawn_tasks(delta: float) -> void:
 	_process_door_destroy_workers(delta)
 	_restore_idle_door_hp()
 	active_door_attack_keys_this_tick = {}
-	_cleanup_hostile_utility_workers()
+	_cleanup_enemy_utility_workers()
 	_interrupt_room_workers_for_priority_tasks()
 	_cleanup_finished_tasks()
 	_cleanup_invalid_room_repair_workers()
@@ -784,26 +787,33 @@ func process_pawn_tasks(delta: float) -> void:
 	pawn_task_recheck_timer = 0.0
 	_assign_idle_pawn_tasks()
 
-func _cleanup_hostile_utility_workers() -> void:
+func _cleanup_enemy_utility_workers() -> void:
 	for pawn_id: String in pawns.keys():
-		if _pawn_is_friendly_to_ship(pawn_id):
-			continue
-		
 		var pawn: Dictionary = pawns[pawn_id]
-		
+
 		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
 			continue
-		
+
 		var task: Dictionary = pawn["task"]
 		var task_type: String = task.get("type", "")
-		
-		match task_type:
-			PawnTaskLogic.TASK_FIRE:
-				_set_pawn_idle(pawn_id)
-			PawnTaskLogic.TASK_HULL_REPAIR:
-				_set_pawn_idle(pawn_id)
-			PawnTaskLogic.TASK_STATION:
-				_set_pawn_idle(pawn_id)
+
+		if not _pawn_is_friendly_to_ship(pawn_id):
+			match task_type:
+				PawnTaskLogic.TASK_FIRE:
+					_set_pawn_idle(pawn_id)
+				PawnTaskLogic.TASK_HULL_REPAIR:
+					_set_pawn_idle(pawn_id)
+				PawnTaskLogic.TASK_ROOM_REPAIR:
+					_set_pawn_idle(pawn_id)
+				PawnTaskLogic.TASK_STATION:
+					_set_pawn_idle(pawn_id)
+
+		elif not _pawn_belongs_to_ship(pawn_id):
+			match task_type:
+				PawnTaskLogic.TASK_ROOM_REPAIR:
+					_set_pawn_idle(pawn_id)
+				PawnTaskLogic.TASK_STATION:
+					_set_pawn_idle(pawn_id)
 
 func _setup_doors_runtime_state() -> void:
 	door_hp_by_key = {}
@@ -1008,17 +1018,11 @@ func _get_door_action_time_for_pawn(pawn_id: String) -> float:
 	if not _pawn_is_friendly_to_ship(pawn_id):
 		return time2change_door_state
 
-	if _doors_station_is_working():
-		return 0.0
-
-	return time2change_door_state
+	return time2change_door_state * _get_doors_station_action_time_factor()
 
 
 func _get_player_door_action_time() -> float:
-	if _doors_station_is_working():
-		return 0.0
-
-	return time2change_door_state
+	return time2change_door_state * _get_doors_station_action_time_factor()
 
 
 func _door_close_is_blocked(door_key: String) -> bool:
@@ -1348,13 +1352,15 @@ func _door_attack_cell_is_reserved_by_friendly(
 	door_key: String,
 	cell: Vector2i
 ) -> bool:
-	var pawn_starship: String = pawns[pawn_id]["node"].get_current_starship()
+	var pawn_starship: String = str(pawns[pawn_id]["node"].get_current_starship())
 
 	for other_id: String in pawns.keys():
 		if other_id == pawn_id:
 			continue
 
-		if not pawns[other_id]["node"].control_is_available(pawn_starship):
+		var other_starship: String = str(pawns[other_id]["node"].get_current_starship())
+
+		if not PawnTaskLogic.starships_are_friends(other_starship, pawn_starship):
 			continue
 
 		var other: Dictionary = pawns[other_id]
@@ -1764,7 +1770,7 @@ func _pawn_position_to_foundation_cell(pawn_id: String) -> Vector2i:
 
 func _process_station_workers(delta: float) -> void:
 	for pawn_id: String in pawns.keys():
-		if not _pawn_is_friendly_to_ship(pawn_id):
+		if not _pawn_belongs_to_ship(pawn_id):
 			continue
 		
 		var pawn: Dictionary = pawns[pawn_id]
@@ -1853,7 +1859,7 @@ func _get_medicine_remote_healing_per_second() -> float:
 	var best_healing_per_second: float = 0.0
 
 	for pawn_id: String in pawns.keys():
-		if not _pawn_is_friendly_to_ship(pawn_id):
+		if not _pawn_belongs_to_ship(pawn_id):
 			continue
 
 		var pawn: Dictionary = pawns[pawn_id]
@@ -1876,17 +1882,25 @@ func _get_medicine_remote_healing_per_second() -> float:
 
 		best_healing_per_second = maxf(
 			best_healing_per_second,
-			_get_medicine_room_healing_per_second(room_id)
+			_get_medicine_room_healing_per_second(room_id) * _get_pawn_impact_administration(pawn_id)
 		)
 
-	return best_healing_per_second * medicine_station_remote_healing_factor
+	return best_healing_per_second
 
 
 func _doors_station_is_working() -> bool:
-	if _doors_system_is_disconnected():
-		return false
+	return _get_doors_station_administration() > 0.0
 
-	return _has_powered_friendly_station_worker_in_kind("doors")
+
+func _get_doors_station_action_time_factor() -> float:
+	return 1.0 - _get_doors_station_administration()
+
+
+func _get_doors_station_administration() -> float:
+	if _doors_system_is_disconnected():
+		return 0.0
+
+	return _get_powered_station_administration_in_kind("doors")
 
 
 func _doors_system_is_disconnected() -> bool:
@@ -1931,8 +1945,14 @@ func _room_kind_is(room_id: int, kind: String) -> bool:
 
 
 func _has_powered_friendly_station_worker_in_kind(kind: String) -> bool:
+	return _get_powered_station_administration_in_kind(kind) > 0.0
+
+
+func _get_powered_station_administration_in_kind(kind: String) -> float:
+	var best_administration: float = 0.0
+
 	for pawn_id: String in pawns.keys():
-		if not _pawn_is_friendly_to_ship(pawn_id):
+		if not _pawn_belongs_to_ship(pawn_id):
 			continue
 
 		var pawn: Dictionary = pawns[pawn_id]
@@ -1950,10 +1970,12 @@ func _has_powered_friendly_station_worker_in_kind(kind: String) -> bool:
 		if not _room_kind_is(room_id, kind):
 			continue
 
-		if _room_is_powered(room_id):
-			return true
+		if not _room_is_powered(room_id):
+			continue
 
-	return false
+		best_administration = maxf(best_administration, _get_pawn_impact_administration(pawn_id))
+
+	return best_administration
 
 
 func _process_room_visibility() -> void:
@@ -2339,7 +2361,7 @@ func _assign_idle_pawn_tasks() -> void:
 		if pawns[pawn_id]["state"] != "idle":
 			continue
 
-		if not _station_task_can_start(task):
+		if not _station_task_can_start(task, pawn_id):
 			continue
 
 		_start_station_task(pawn_id, task)
@@ -2356,7 +2378,7 @@ func _start_pawn_work(pawn_id: String, task: Dictionary) -> void:
 
 
 func _start_station_task(pawn_id: String, task: Dictionary) -> void:
-	if task.get("type", "") == PawnTaskLogic.TASK_STATION and not _station_task_can_start(task):
+	if task.get("type", "") == PawnTaskLogic.TASK_STATION and not _station_task_can_start(task, pawn_id):
 		return
 
 	_start_pawn_task_at_target_cell(pawn_id, task)
@@ -2373,13 +2395,16 @@ func _start_pawn_task_at_target_cell(pawn_id: String, task: Dictionary) -> void:
 	pawn_to_cell(pawn_id, target_cell, task)
 
 
-func _station_task_can_start(task: Dictionary) -> bool:
+func _station_task_can_start(task: Dictionary, pawn_id: String = "") -> bool:
 	if task.get("type", "") != PawnTaskLogic.TASK_STATION:
 		return true
 
 	var room_id: int = int(task.get("room_id", -1))
 
 	if room_id < 0:
+		return false
+
+	if pawn_id != "" and not _pawn_belongs_to_ship(pawn_id):
 		return false
 
 	return _room_is_powered(room_id)
@@ -2397,18 +2422,42 @@ func _cleanup_finished_tasks() -> void:
 
 
 func _apply_fire_workers() -> void:
-	var workers_by_fire: Dictionary = PawnTaskLogic.count_workers_by_target(
-		pawns,
-		PawnTaskLogic.TASK_FIRE,
-		starship_uuid
-	)
+	var extinguishing_by_fire: Dictionary = _count_extinguishing_workers_by_target()
 
 	for fire_cell: Vector2i in fires.keys():
 		var fire: Node = fires[fire_cell]["node"]
-		var workers: int = int(workers_by_fire.get(fire_cell, 0))
+		var extinguishing: float = float(extinguishing_by_fire.get(fire_cell, 0.0))
 
-		fire.extinguish_fire(workers > 0)
-		fire.set_time_scale(workers)
+		fire.extinguish_fire(extinguishing > 0.0)
+		fire.set_time_scale(extinguishing)
+
+
+func _count_extinguishing_workers_by_target() -> Dictionary:
+	var result: Dictionary = {}
+
+	for pawn_id: String in pawns.keys():
+		if not _pawn_is_friendly_to_ship(pawn_id):
+			continue
+
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != PawnTaskLogic.TASK_FIRE:
+			continue
+
+		var target_cell: Vector2i = task["target_cell"]
+		var extinguishing: float = _get_pawn_impact_extinguishing(pawn_id)
+
+		if extinguishing <= 0.0:
+			continue
+
+		result[target_cell] = float(result.get(target_cell, 0.0)) + extinguishing
+
+	return result
 
 
 func _process_hull_repair_workers(delta: float) -> void:
@@ -2677,13 +2726,15 @@ func dynamically_available_cells(
 				for cell: Vector2i in _get_pawn_reserved_cells_for_availability(other_id):
 					exclude_cells[cell] = true
 		else:
-			var pawn_starship: String = pawns[pawn_id]["node"].get_current_starship()
+			var pawn_starship: String = str(pawns[pawn_id]["node"].get_current_starship())
 
 			for other_id: String in pawns.keys():
 				if other_id == pawn_id:
 					continue
 
-				if not pawns[other_id]["node"].control_is_available(pawn_starship):
+				var other_starship: String = str(pawns[other_id]["node"].get_current_starship())
+
+				if not PawnTaskLogic.starships_are_friends(other_starship, pawn_starship):
 					continue
 
 				for cell: Vector2i in _get_pawn_reserved_cells_for_availability(other_id):
@@ -2927,13 +2978,15 @@ func _cell_has_friendly_pawn(
 	cell: Vector2i,
 	pawn_id: String
 ) -> bool:
-	var pawn_starship: String = pawns[pawn_id]["node"].get_current_starship()
+	var pawn_starship: String = str(pawns[pawn_id]["node"].get_current_starship())
 
 	for other_id: String in pawns.keys():
 		if other_id == pawn_id:
 			continue
 
-		if not pawns[other_id]["node"].control_is_available(pawn_starship):
+		var other_starship: String = str(pawns[other_id]["node"].get_current_starship())
+
+		if not PawnTaskLogic.starships_are_friends(other_starship, pawn_starship):
 			continue
 
 		for other_cell: Vector2i in _get_pawn_reserved_cells_for_availability(other_id):
@@ -3112,6 +3165,14 @@ func _get_pawn_impact_engineering(pawn_id: String) -> int:
 	return maxi(0, int(pawns[pawn_id]["node"].get_impact_engineering()))
 
 
+func _get_pawn_impact_extinguishing(pawn_id: String) -> float:
+	return maxf(0.0, float(pawns[pawn_id]["node"].get_impact_extinguishing()))
+
+
+func _get_pawn_impact_administration(pawn_id: String) -> float:
+	return clampf(float(pawns[pawn_id]["node"].get_impact_administration()), 0.0, 1.0)
+
+
 func _get_pawn_impact_force(pawn_id: String) -> int:
 	return int(pawns[pawn_id]["node"].get_impact_force())
 
@@ -3189,7 +3250,9 @@ func _friendly_pawn_already_approaches_battle_target(
 		if other_id == pawn_id:
 			continue
 
-		if not pawns[other_id]["node"].control_is_available(pawn_starship):
+		var other_starship: String = str(pawns[other_id]["node"].get_current_starship())
+
+		if not PawnTaskLogic.starships_are_friends(other_starship, pawn_starship):
 			continue
 
 		var other: Dictionary = pawns[other_id]
@@ -3408,6 +3471,7 @@ func setup_room_hp() -> void:
 	room_sabotage_pawn_room_by_id = {}
 	room_visibility_by_room = {}
 	specialized_room_state_cache = {}
+	ship_power_state_cache = {}
 	_setup_room_station_hp_visuals()
 
 	for room_id: int in range(rooms.size()):
@@ -3486,6 +3550,20 @@ func get_ship_power_state() -> Dictionary:
 		"available": int(ship_power_available),
 		"used": int(ship_power_used)
 	}
+
+
+func _emit_ship_power_state_update() -> void:
+	var state: Dictionary = get_ship_power_state()
+
+	if ship_power_state_cache == state:
+		return
+
+	ship_power_state_cache = state.duplicate()
+	emit_signal(
+		"ship_power_state_changed",
+		int(state["available"]),
+		int(state["used"])
+	)
 
 
 func _get_room_fortitude_percent(room_id: int) -> float:
@@ -3635,6 +3713,7 @@ func _recalculate_room_power() -> void:
 	_apply_door_recolor_shader()
 	_recalculate_room_visibility()
 	_emit_specialized_room_state_updates()
+	_emit_ship_power_state_update()
 
 
 func _setup_room_station_hp_visuals() -> void:
@@ -3879,7 +3958,7 @@ func _get_room_fortitude_repair_by_room() -> Dictionary:
 	var result: Dictionary = {}
 
 	for pawn_id: String in pawns.keys():
-		if not _pawn_is_friendly_to_ship(pawn_id):
+		if not _pawn_belongs_to_ship(pawn_id):
 			continue
 
 		var pawn: Dictionary = pawns[pawn_id]
@@ -3977,7 +4056,15 @@ func process_room_hp(delta: float) -> void:
 	process_room_systems(delta)
 
 func _pawn_is_friendly_to_ship(pawn_id: String) -> bool:
-	return str(pawns[pawn_id]["node"].get_current_starship()) == starship_uuid
+	return PawnTaskLogic.pawn_is_friend_to_starship(pawns, pawn_id, starship_uuid)
+
+
+func _pawn_belongs_to_ship(pawn_id: String) -> bool:
+	return PawnTaskLogic.pawn_belongs_to_starship(pawns, pawn_id, starship_uuid)
+
+
+func _starship_is_friendly_to_ship(other_starship_uuid: String) -> bool:
+	return PawnTaskLogic.starships_are_friends(other_starship_uuid, starship_uuid)
 
 func _on_room_hp_depleted(room_id: int) -> void:
 	room_fortitude_by_room[room_id] = room_fortitude_max
