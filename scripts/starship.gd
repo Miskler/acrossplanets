@@ -8,7 +8,7 @@ signal delete_pawn_event(node, uuid)
 
 signal room_hp_changed(room_id: int, hp: float)
 signal room_hp_depleted(room_id: int)
-signal specialized_room_state_changed(specialization: String, health: float, energy: int, opened_max_level: int)
+signal specialized_room_state_changed(specialization: String, health: float, fortitude: float, energy: int, opened_max_level: int)
 
 @export var pawns2spawn: Array[Dictionary] = [{"race": "human"}, {"race": "human"}, {"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
 
@@ -156,10 +156,8 @@ var room_fortitude_by_room: Dictionary = {}
 var room_max_power_by_room: Dictionary = {}
 var room_unlocked_max_power_by_room: Dictionary = {}
 var room_integrity_max_power_by_room: Dictionary = {}
-var room_requested_power_by_room: Dictionary = {}
 var room_current_power_by_room: Dictionary = {}
 var ship_power_used: int = 0
-var ship_power_unused: int = 0
 var room_sabotage_pawn_room_by_id: Dictionary = {}
 
 var room_visibility_by_room: Dictionary = {}
@@ -2239,7 +2237,6 @@ func get_room_hint_data(room_id: int) -> Dictionary:
 			"integrity_max": 0,
 			"fortitude": 0.0,
 			"power": 0,
-			"requested_power": 0,
 			"max_power": 0
 		}
 
@@ -2259,7 +2256,6 @@ func get_room_hint_data(room_id: int) -> Dictionary:
 		"integrity_max": int(room_integrity_max_by_room.get(room_id, room_integrity_max_default)),
 		"fortitude": float(room_fortitude_by_room.get(room_id, room_fortitude_max)),
 		"power": int(room_current_power_by_room.get(room_id, 0)),
-		"requested_power": int(room_requested_power_by_room.get(room_id, 0)),
 		"max_power": int(room_max_power_by_room.get(room_id, 0))
 	}
 
@@ -3502,7 +3498,6 @@ func setup_room_hp() -> void:
 	room_max_power_by_room = {}
 	room_unlocked_max_power_by_room = {}
 	room_integrity_max_power_by_room = {}
-	room_requested_power_by_room = {}
 	room_current_power_by_room = {}
 	room_sabotage_pawn_room_by_id = {}
 	room_visibility_by_room = {}
@@ -3523,7 +3518,6 @@ func setup_room_hp() -> void:
 		room_hp_by_room[room_id] = room_hp_max
 		room_max_power_by_room[room_id] = max_power
 		room_unlocked_max_power_by_room[room_id] = unlocked_power
-		room_requested_power_by_room[room_id] = unlocked_power
 		room_current_power_by_room[room_id] = 0
 
 	_recalculate_room_power()
@@ -3570,6 +3564,13 @@ func get_specialized_rooms_state() -> Array[Dictionary]:
 	return result
 
 
+func get_ship_power_state() -> Dictionary:
+	return {
+		"available": int(ship_power_available),
+		"used": int(ship_power_used)
+	}
+
+
 func _room_is_specialized(room_id: int) -> bool:
 	return room_id >= 0 and room_id < rooms.size() and rooms[room_id].has("kind") and str(rooms[room_id]["kind"]) != ""
 
@@ -3588,6 +3589,7 @@ func _get_room_id_by_specialization(specialization: String) -> int:
 func _get_specialized_room_signal_state(room_id: int) -> Dictionary:
 	return {
 		"health": float(room_hp_by_room.get(room_id, room_hp_max)),
+		"fortitude": float(room_fortitude_by_room.get(room_id, room_fortitude_max)),
 		"energy": int(room_current_power_by_room.get(room_id, 0)),
 		"opened_max_level": int(room_unlocked_max_power_by_room.get(room_id, 0))
 	}
@@ -3609,6 +3611,7 @@ func _emit_specialized_room_state_updates() -> void:
 			"specialized_room_state_changed",
 			specialization,
 			float(state["health"]),
+			float(state["fortitude"]),
 			int(state["energy"]),
 			int(state["opened_max_level"])
 		)
@@ -3622,17 +3625,33 @@ func set_ship_power_available(value: int) -> void:
 func set_room_unlocked_power(room_id: int, value: int) -> void:
 	var max_power: int = int(room_max_power_by_room.get(room_id, 0))
 	room_unlocked_max_power_by_room[room_id] = clampi(value, 0, max_power)
-	room_requested_power_by_room[room_id] = mini(
-		int(room_requested_power_by_room.get(room_id, 0)),
-		int(room_unlocked_max_power_by_room[room_id])
-	)
 	_recalculate_room_power()
 
 
-func set_room_requested_power(room_id: int, value: int) -> void:
-	var max_power: int = _get_room_requested_power_limit(room_id)
-	room_requested_power_by_room[room_id] = clampi(value, 0, max_power)
+func set_room_energy(room_id: int, value: int) -> bool:
+	if room_id < 0 or room_id >= rooms.size():
+		return false
+
+	if value < 0:
+		return false
+
+	if value > _get_room_effective_power_limit(room_id):
+		return false
+
+	var total_power: int = value
+
+	for other_room_id: int in range(rooms.size()):
+		if other_room_id == room_id:
+			continue
+
+		total_power += int(room_current_power_by_room.get(other_room_id, 0))
+
+	if total_power > ship_power_available:
+		return false
+
+	room_current_power_by_room[room_id] = value
 	_recalculate_room_power()
+	return true
 
 
 func set_specialized_room_energy(specialization: String, new_energy: int) -> bool:
@@ -3641,28 +3660,7 @@ func set_specialized_room_energy(specialization: String, new_energy: int) -> boo
 	if room_id < 0:
 		return false
 
-	if new_energy < 0:
-		return false
-
-	if new_energy > _get_room_effective_power_limit(room_id):
-		return false
-
-	var requested_total: int = new_energy
-	for other_room_id: int in range(rooms.size()):
-		if other_room_id == room_id:
-			continue
-
-		requested_total += mini(
-			int(room_requested_power_by_room.get(other_room_id, 0)),
-			_get_room_effective_power_limit(other_room_id)
-		)
-
-	if requested_total > ship_power_available:
-		return false
-
-	room_requested_power_by_room[room_id] = new_energy
-	_recalculate_room_power()
-	return int(room_current_power_by_room.get(room_id, 0)) == new_energy
+	return set_room_energy(room_id, new_energy)
 
 
 func _get_room_integrity_power_limit(room_id: int) -> int:
@@ -3686,34 +3684,22 @@ func _get_room_effective_power_limit(room_id: int) -> int:
 	)
 
 
-func _get_room_requested_power_limit(room_id: int) -> int:
-	return mini(
-		int(room_max_power_by_room.get(room_id, 0)),
-		int(room_unlocked_max_power_by_room.get(room_id, 0))
-	)
-
-
 func _recalculate_room_power() -> void:
-	var remaining_power: int = maxi(ship_power_available, 0)
 	ship_power_used = 0
 
 	for room_id: int in range(rooms.size()):
 		var integrity_limit: int = _get_room_integrity_power_limit(room_id)
 		room_integrity_max_power_by_room[room_id] = integrity_limit
 
-		var effective_limit: int = _get_room_effective_power_limit(room_id)
-		var requested_power: int = clampi(
-			int(room_requested_power_by_room.get(room_id, effective_limit)),
+		var current_power: int = clampi(
+			int(room_current_power_by_room.get(room_id, 0)),
 			0,
-			_get_room_requested_power_limit(room_id)
+			_get_room_effective_power_limit(room_id)
 		)
 
-		var granted_power: int = mini(mini(requested_power, effective_limit), remaining_power)
-		room_current_power_by_room[room_id] = granted_power
-		remaining_power -= granted_power
-		ship_power_used += granted_power
+		room_current_power_by_room[room_id] = current_power
+		ship_power_used += current_power
 
-	ship_power_unused = remaining_power
 	_apply_door_recolor_shader()
 	_recalculate_room_visibility()
 	_emit_specialized_room_state_updates()
@@ -3845,9 +3831,11 @@ func process_room_systems(delta: float) -> void:
 	var damage_by_room: Dictionary = _get_room_fortitude_damage_by_room()
 	var repair_by_room: Dictionary = _get_room_fortitude_repair_by_room()
 	var power_needs_recalc: bool = false
+	var specialized_state_needs_emit: bool = false
 
 	for room_id: int in range(rooms.size()):
 		var fortitude: float = float(room_fortitude_by_room.get(room_id, room_fortitude_max))
+		var previous_fortitude: float = fortitude
 		var integrity: int = int(room_integrity_by_room.get(room_id, room_integrity_max_default))
 		var integrity_max: int = int(room_integrity_max_by_room.get(room_id, room_integrity_max_default))
 
@@ -3864,6 +3852,10 @@ func process_room_systems(delta: float) -> void:
 				fortitude = room_fortitude_max
 
 			room_fortitude_by_room[room_id] = fortitude
+
+			if fortitude != previous_fortitude and _room_is_specialized(room_id):
+				specialized_state_needs_emit = true
+
 			continue
 
 		if repair_by_room.has(room_id) and integrity < integrity_max:
@@ -3878,18 +3870,31 @@ func process_room_systems(delta: float) -> void:
 				power_needs_recalc = true
 
 			room_fortitude_by_room[room_id] = fortitude
+
+			if fortitude != previous_fortitude and _room_is_specialized(room_id):
+				specialized_state_needs_emit = true
+
 			continue
 
 		if _room_has_sabotage_keeper(room_id):
 			if fortitude > room_fortitude_max:
 				room_fortitude_by_room[room_id] = room_fortitude_max
+
+				if _room_is_specialized(room_id):
+					specialized_state_needs_emit = true
+
 			continue
 
 		if fortitude != room_fortitude_max:
 			room_fortitude_by_room[room_id] = room_fortitude_max
 
+			if _room_is_specialized(room_id):
+				specialized_state_needs_emit = true
+
 	if power_needs_recalc:
 		_recalculate_room_power()
+	elif specialized_state_needs_emit:
+		_emit_specialized_room_state_updates()
 
 
 func _emit_room_integrity_changed(room_id: int) -> void:

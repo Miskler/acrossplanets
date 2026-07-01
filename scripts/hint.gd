@@ -64,8 +64,6 @@ func render(data: Dictionary) -> void:
 		null:
 			pass
 		"room":
-			print(data["info"])
-			
 			$Title.text = SPECIALIZATIONS.get(data["info"]["specialization"], "Комната")
 			
 			if data["info"]["hidden"]:
@@ -108,12 +106,16 @@ func render(data: Dictionary) -> void:
 			else:
 				to_title = "Закрытая"
 			$Title.text = to_title+" дверь"
+			print(data["info"])
+			if data["info"]["level"] == -1:
+				$Title.text = $Title.text + " (обесточено)"
+			
 			$Door/Level/Label.text = str(data["info"]["level"]+1)
 			
 			$Door/Heart/Label.text = "OK" if not data["info"]["broken"] else str(int(data["info"]["cooldown"]))+" сек"
 			$Door/Heart/Damage.value = 100 if data["info"]["broken"] else (100 - data["info"]["fortress"])
 			
-			size = Vector2(161, 66)
+			size = Vector2(274, 66)
 		"pawn":
 			$Title.text = data["info"]["pawn_name"]+" "+TASKS.get(data["info"]["current_task"].to_lower(), data["info"]["current_task"])
 			$Pawn/Header/Label.text = str(data["info"]["health"])+"%"

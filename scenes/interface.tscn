@@ -131,6 +131,7 @@ alignment = 2
 [node name="*Sample" type="TextureButton" parent="InGame/Services/Box" unique_id=230960255]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
+button_mask = 3
 
 [node name="Energy" type="VBoxContainer" parent="InGame/Services/Box/*Sample" unique_id=1989923696]
 layout_mode = 1

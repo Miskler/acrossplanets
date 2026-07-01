@@ -53,7 +53,6 @@ func _ready() -> void:
 	sprite_layer.material = sprite_layer.material.duplicate()
 
 func set_team_color(team: String):
-	print(team)
 	set_color(team, randi() % TEAM_COLORS[team].size())
 
 func set_color(team: String, variant: int):
