@@ -11,6 +11,12 @@ var animations: Dictionary = {
 	"human": preload("res://assets/races/human.tres")
 }
 
+const TEAM_COLORS: Dictionary[String, Array] = {
+	"user": [Color("0099b3"), Color("1886ff"), Color("6479ff")],
+	"enemy": [Color("fb005c"), Color("f53400"), Color("f7007c")]
+}
+var pawn_color: Dictionary = {}
+
 var min_oxygen: int = 1
 var max_oxygen: int = 100
 
@@ -42,6 +48,17 @@ var animation: String = "standing" # standing, moving
 var selected: bool = false
 
 var movement_tween: Tween = null
+
+func _ready() -> void:
+	sprite_layer.material = sprite_layer.material.duplicate()
+
+func set_team_color(team: String):
+	print(team)
+	set_color(team, randi() % TEAM_COLORS[team].size())
+
+func set_color(team: String, variant: int):
+	pawn_color = {"team": team, "variant": variant}
+	sprite_layer.material.set_shader_parameter("to_color", TEAM_COLORS[team][variant])
 
 func control_is_available(target_starship: String) -> bool:
 	return target_starship == get_current_starship()

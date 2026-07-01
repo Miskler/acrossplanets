@@ -8,6 +8,7 @@ signal delete_pawn_event(node, uuid)
 
 signal room_hp_changed(room_id: int, hp: float)
 signal room_hp_depleted(room_id: int)
+signal specialized_room_state_changed(specialization: String, health: float, energy: int, opened_max_level: int)
 
 @export var pawns2spawn: Array[Dictionary] = [{"race": "human"}, {"race": "human"}, {"race": "human", "starship": "enemy_team_1"}, {"race": "human", "starship": "enemy_team_1"}]
 
@@ -17,6 +18,7 @@ signal room_hp_depleted(room_id: int)
 @onready var icons_layer = $Icons
 @onready var pawns_layer = $Pawns
 @onready var fire_layer = $Fire
+@onready var room_visibility_fog_layer: Node2D = $Fog
 const SAMPLES_PER_TILE: int = 1
 
 var time2change_door_state = 0.2
@@ -70,6 +72,14 @@ var oxygen_recheck_timer: float = 0.0
 
 var pawn_environment_damage_timer: float = 0.0
 
+@export var pawn_healing_enabled: bool = true
+@export var pawn_healing_tick_interval: float = 0.25
+@export var medicine_healing_levels_map: Array = [0.0, 1.0, 2.0, 3.0, 4.0]
+@export var medicine_station_remote_healing_factor: float = 0.5
+
+var pawn_healing_progress_by_id: Dictionary = {}
+var pawn_healing_tick_timer: float = 0.0
+
 @export var pawn_task_enabled: bool = true
 @export var pawn_task_recheck_interval: float = 0.25
 @export var hull_repair_engineering_per_step: float = 100.0
@@ -80,6 +90,11 @@ var hull_holes: Dictionary = {}
 var hull_repair_progress: Dictionary = {}
 
 var doors_level: int = 0
+var doors_disconnected_level: int = 0
+var fortress_doors_disconnected_level: float = 1.0
+var health_doors_disconnected_level: int = 10
+var cooldown_doors_disconnected_level: float = 0.0
+var color_doors_disconnected_level: Color = Color(0.25, 0.25, 0.25, 1.0)
 var fortress_doors_levels_map: Array = [0.7, 0.4, 0.2, 0.1] # определяет, с какой вероятностью распространиться огонь
 var health_doors_levels_map: Array = [20, 40, 60, 80] # урон который должна впитать дверь прежде чем открыться
 var cooldown_doors_levels_map: Array = [8, 5, 3, 2] # время в секундах сколько дверь нельзя будет закрыть
@@ -149,6 +164,21 @@ var ship_power_used: int = 0
 var ship_power_unused: int = 0
 var room_sabotage_pawn_room_by_id: Dictionary = {}
 
+var room_visibility_by_room: Dictionary = {}
+@export var room_visibility_fog_enabled: bool = true
+@export var room_visibility_fog_color: Color = Color(0.0, 0.0, 0.0, 1.0)
+@export var room_visibility_fog_fade_time: float = 0.16
+
+var room_visibility_fog_polygons_by_room: Dictionary = {}
+var room_visibility_fog_by_room: Dictionary = {}
+var room_visibility_fog_tweens_by_room: Dictionary = {}
+var pawn_visibility_by_id: Dictionary = {}
+var pawn_visibility_tweens_by_id: Dictionary = {}
+var fire_visibility_by_cell: Dictionary = {}
+var fire_visibility_tweens_by_cell: Dictionary = {}
+@export var pawn_visibility_fade_time: float = 0.16
+var specialized_room_state_cache: Dictionary = {}
+
 
 func _ready() -> void:
 	restart()
@@ -170,6 +200,11 @@ func _process(delta: float) -> void:
 	if pawn_task_enabled:
 		process_pawn_tasks(delta)
 		_process_station_workers(delta)
+	
+	if pawn_healing_enabled:
+		_process_pawn_healing(delta)
+	
+	_process_room_visibility()
 
 func restart() -> void:
 	starship_uuid = NodeUUID.uuid_v4()
@@ -177,6 +212,7 @@ func restart() -> void:
 	rooms = recalc_rooms()
 	setup_oxygen()
 	setup_room_hp()
+	_setup_room_visibility_fog()
 	_setup_doors_runtime_state()
 	_apply_door_recolor_shader()
 	
@@ -188,9 +224,15 @@ func restart() -> void:
 		pawns[pawn_key]["node"].queue_free()
 	for pawn in pawns_layer.get_children():
 		pawn.queue_free()
+	_clear_pawn_visibility_runtime()
+	_clear_fire_visibility_runtime()
 	pawns = {}
 	for pawn in pawns2spawn:
 		add_pawn(pawn)
+	
+	pawn_healing_progress_by_id = {}
+	pawn_healing_tick_timer = 0.0
+	_process_room_visibility()
 	
 	emit_signal("restart_finish")
 
@@ -206,6 +248,7 @@ func add_pawn(pawn_data_or_race: Variant, starship: String = starship_uuid, over
 
 	var race: String = str(pawn_data["race"])
 	var pawn_starship: String = str(pawn_data.get("starship", starship_uuid))
+	var pawn_team: String = "user" if pawn_starship == starship_uuid else "enemy"
 	var spawn_cell: Vector2i
 
 	if pawn_data.has("spawn_cell"):
@@ -223,6 +266,21 @@ func add_pawn(pawn_data_or_race: Variant, starship: String = starship_uuid, over
 	pawns_layer.add_child(pawn)
 	pawn.starship = pawn_starship
 	pawn.set_race(race)
+	if pawn_data.has("pawn_color"):
+		var pawn_color_data: Variant = pawn_data["pawn_color"]
+		if typeof(pawn_color_data) == TYPE_DICTIONARY:
+			var pawn_color_dict: Dictionary = pawn_color_data
+			if pawn_color_dict.has("variant"):
+				pawn.set_color(pawn_team, int(pawn_color_dict["variant"]))
+			else:
+				pawn.set_team_color(pawn_team)
+		else:
+			pawn.set_color(pawn_team, int(pawn_color_data))
+	elif pawn_data.has("pawn_color_variant"):
+		pawn.set_color(pawn_team, int(pawn_data["pawn_color_variant"]))
+	else:
+		pawn.set_team_color(pawn_team)
+	var pawn_color: Dictionary = pawn.pawn_color.duplicate(true)
 
 	var uuid: String = str(pawn_data.get("uuid", NodeUUID.uuid_v4()))
 	var pawn_name: String = str(pawn_data.get("pawn_name", NameGenerator.random(race)))
@@ -243,10 +301,12 @@ func add_pawn(pawn_data_or_race: Variant, starship: String = starship_uuid, over
 		"node": pawn,
 		"race": race,
 		"pawn_name": pawn_name,
+		"pawn_color": pawn_color,
 		"cells": [spawn_cell],
 		"state": "idle",
 		"task": {}
 	}
+	_apply_single_pawn_visibility(uuid, false)
 	emit_signal("add_pawn_event", pawn, uuid)
 	return true
 
@@ -261,6 +321,7 @@ func pawn_to_json(pawn_id: String) -> Dictionary:
 		"starship": str(pawn_node.get_current_starship()),
 		"uuid": pawn_id,
 		"pawn_name": str(pawn_data["pawn_name"]),
+		"pawn_color": _pawn_color_from_node(pawn_id),
 		"spawn_cell": {
 			"x": cell.x,
 			"y": cell.y
@@ -281,6 +342,18 @@ func _pawn_spawn_cell_from_json(value: Variant) -> Vector2i:
 
 	return Vector2i(int(value["x"]), int(value["y"]))
 
+
+func _pawn_color_from_node(pawn_id: String) -> Dictionary:
+	var pawn_node: Node = pawns[pawn_id]["node"]
+	var pawn_color: Dictionary = pawn_node.pawn_color
+
+	var fallback_team: String = "user" if str(pawn_node.get_current_starship()) == starship_uuid else "enemy"
+
+	return {
+		"team": str(pawn_color.get("team", fallback_team)),
+		"variant": int(pawn_color.get("variant", -1))
+	}
+
 func _on_pawn_action_required(
 	step: Dictionary,
 	next_step_index: int,
@@ -296,13 +369,13 @@ func _on_pawn_action_required(
 	if not task.has("opened_doors"):
 		task["opened_doors"] = {}
 
-	if action == "open_door" and is_hostile:
-		var hostile_current_state: String = DoorManager.get_door_state(
+	if action == "open_door" and (is_hostile or _doors_system_is_disconnected()):
+		var current_state_before_destroy: String = DoorManager.get_door_state(
 			foundation_layer,
 			door_cells
 		)
 
-		if hostile_current_state == DoorManager.DOOR_STATE_OPEN:
+		if current_state_before_destroy == DoorManager.DOOR_STATE_OPEN:
 			_continue_pawn_move_after_action(pawn_id, next_step_index)
 			return
 
@@ -314,7 +387,7 @@ func _on_pawn_action_required(
 		)
 		return
 
-	if action == "close_door" and is_hostile:
+	if action == "close_door" and (is_hostile or _doors_system_is_disconnected()):
 		_continue_pawn_move_after_action(pawn_id, next_step_index)
 		return
 
@@ -336,7 +409,10 @@ func _on_pawn_action_required(
 					DoorManager.DOOR_STATE_OPEN
 				)
 
-				await get_tree().create_timer(time2change_door_state).timeout
+				var open_delay: float = _get_door_action_time_for_pawn(pawn_id)
+
+				if open_delay > 0.0:
+					await get_tree().create_timer(open_delay).timeout
 
 		"close_door":
 			if not task["opened_doors"].has(door_key):
@@ -360,7 +436,10 @@ func _on_pawn_action_required(
 					DoorManager.DOOR_STATE_CLOSED
 				)
 
-				await get_tree().create_timer(time2change_door_state).timeout
+				var close_delay: float = _get_door_action_time_for_pawn(pawn_id)
+
+				if close_delay > 0.0:
+					await get_tree().create_timer(close_delay).timeout
 
 			task["opened_doors"].erase(door_key)
 
@@ -881,21 +960,63 @@ func _apply_door_recolor_shader() -> void:
 
 
 func _get_current_door_color() -> Color:
+	if _doors_system_is_disconnected():
+		return color_doors_disconnected_level
+
 	return color_doors_levess_map[
 		clampi(doors_level, 0, color_doors_levess_map.size() - 1)
 	]
 
 
 func _get_current_door_max_hp() -> float:
+	if _doors_system_is_disconnected():
+		return float(health_doors_disconnected_level)
+
 	return float(health_doors_levels_map[
 		clampi(doors_level, 0, health_doors_levels_map.size() - 1)
 	])
 
 
 func _get_current_door_close_cooldown() -> float:
+	if _doors_system_is_disconnected():
+		return cooldown_doors_disconnected_level
+
 	return float(cooldown_doors_levels_map[
 		clampi(doors_level, 0, cooldown_doors_levels_map.size() - 1)
 	])
+
+
+func _get_current_door_fire_spread_chance() -> float:
+	if _doors_system_is_disconnected():
+		return fortress_doors_disconnected_level
+
+	return float(fortress_doors_levels_map[
+		clampi(doors_level, 0, fortress_doors_levels_map.size() - 1)
+	])
+
+
+func _get_effective_doors_level() -> int:
+	if _doors_system_is_disconnected():
+		return doors_disconnected_level
+
+	return doors_level
+
+
+func _get_door_action_time_for_pawn(pawn_id: String) -> float:
+	if not _pawn_is_friendly_to_ship(pawn_id):
+		return time2change_door_state
+
+	if _doors_station_is_working():
+		return 0.0
+
+	return time2change_door_state
+
+
+func _get_player_door_action_time() -> float:
+	if _doors_station_is_working():
+		return 0.0
+
+	return time2change_door_state
 
 
 func _door_close_is_blocked(door_key: String) -> bool:
@@ -914,6 +1035,9 @@ func _process_door_close_cooldowns(delta: float) -> void:
 
 
 func request_player_toggle_door(door_cells: Array) -> void:
+	if _doors_system_is_disconnected():
+		return
+
 	var door_key: String = _door_cells_key(door_cells)
 	var current_state: String = DoorManager.get_door_state(foundation_layer, door_cells)
 	var target_state: String = DoorManager.DOOR_STATE_OPEN
@@ -924,7 +1048,10 @@ func request_player_toggle_door(door_cells: Array) -> void:
 	if target_state == DoorManager.DOOR_STATE_CLOSED and _door_close_is_blocked(door_key):
 		return
 
-	await get_tree().create_timer(time2change_door_state).timeout
+	var action_delay: float = _get_player_door_action_time()
+
+	if action_delay > 0.0:
+		await get_tree().create_timer(action_delay).timeout
 
 	current_state = DoorManager.get_door_state(foundation_layer, door_cells)
 
@@ -1660,6 +1787,650 @@ func _process_station_workers(delta: float) -> void:
 		# тут уже эффект станции:
 		# генерация энергии, управление пушками, лечение, производство и т.д.
 
+
+func _process_pawn_healing(delta: float) -> void:
+	pawn_healing_tick_timer += delta
+
+	if pawn_healing_tick_timer < pawn_healing_tick_interval:
+		return
+
+	var tick_delta: float = pawn_healing_tick_timer
+	pawn_healing_tick_timer = 0.0
+	var remote_healing_per_second: float = _get_medicine_remote_healing_per_second()
+
+	for pawn_id: String in pawns.keys():
+		if not _pawn_is_friendly_to_ship(pawn_id):
+			continue
+
+		var pawn_node: Node2D = pawns[pawn_id]["node"]
+
+		if int(pawn_node.health) >= int(pawn_node.max_health):
+			pawn_healing_progress_by_id[pawn_id] = 0.0
+			continue
+
+		var pawn_room_id: int = cell_to_room(pawns[pawn_id]["cells"][0])
+
+		if pawn_room_id < 0:
+			continue
+
+		var healing_per_second: float = 0.0
+
+		if _room_kind_is(pawn_room_id, "medicine"):
+			healing_per_second = _get_medicine_room_healing_per_second(pawn_room_id)
+		elif remote_healing_per_second > 0.0:
+			healing_per_second = remote_healing_per_second
+
+		if healing_per_second <= 0.0:
+			continue
+
+		var healing_progress: float = float(pawn_healing_progress_by_id.get(pawn_id, 0.0))
+		healing_progress += healing_per_second * tick_delta
+
+		var healing_value: int = floori(healing_progress)
+
+		if healing_value <= 0:
+			pawn_healing_progress_by_id[pawn_id] = healing_progress
+			continue
+
+		pawn_node.healing(healing_value)
+		pawn_healing_progress_by_id[pawn_id] = healing_progress - float(healing_value)
+
+
+func _get_medicine_room_healing_per_second(room_id: int) -> float:
+	var room_level: int = int(room_current_power_by_room.get(room_id, 0))
+
+	if room_level <= 0:
+		return 0.0
+
+	return float(medicine_healing_levels_map[
+		clampi(room_level, 0, medicine_healing_levels_map.size() - 1)
+	])
+
+
+func _get_medicine_remote_healing_per_second() -> float:
+	var best_healing_per_second: float = 0.0
+
+	for pawn_id: String in pawns.keys():
+		if not _pawn_is_friendly_to_ship(pawn_id):
+			continue
+
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != PawnTaskLogic.TASK_STATION:
+			continue
+
+		var room_id: int = int(task["room_id"])
+
+		if not _room_kind_is(room_id, "medicine"):
+			continue
+
+		if not _room_is_powered(room_id):
+			continue
+
+		best_healing_per_second = maxf(
+			best_healing_per_second,
+			_get_medicine_room_healing_per_second(room_id)
+		)
+
+	return best_healing_per_second * medicine_station_remote_healing_factor
+
+
+func _doors_station_is_working() -> bool:
+	if _doors_system_is_disconnected():
+		return false
+
+	return _has_powered_friendly_station_worker_in_kind("doors")
+
+
+func _doors_system_is_disconnected() -> bool:
+	return not _room_kind_has_power("doors")
+
+
+func _cameras_system_is_powered() -> bool:
+	return _room_kind_has_power("cameras")
+
+
+func _room_kind_has_power(kind: String) -> bool:
+	for room_id: int in range(rooms.size()):
+		if not _room_kind_is(room_id, kind):
+			continue
+
+		if _room_is_powered(room_id):
+			return true
+
+	return false
+
+
+func _room_is_powered(room_id: int) -> bool:
+	return int(room_current_power_by_room.get(room_id, 0)) > 0
+
+
+func _room_kind_is(room_id: int, kind: String) -> bool:
+	var room: Dictionary = rooms[room_id]
+
+	if room.get("kind", null) == kind:
+		return true
+
+	for room_kind: String in room.get("kinds", []):
+		if room_kind == kind:
+			return true
+
+	return false
+
+
+func _has_powered_friendly_station_worker_in_kind(kind: String) -> bool:
+	for pawn_id: String in pawns.keys():
+		if not _pawn_is_friendly_to_ship(pawn_id):
+			continue
+
+		var pawn: Dictionary = pawns[pawn_id]
+
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+
+		var task: Dictionary = pawn["task"]
+
+		if task.get("type", "") != PawnTaskLogic.TASK_STATION:
+			continue
+
+		var room_id: int = int(task["room_id"])
+
+		if not _room_kind_is(room_id, kind):
+			continue
+
+		if _room_is_powered(room_id):
+			return true
+
+	return false
+
+
+func _process_room_visibility() -> void:
+	_recalculate_room_visibility()
+	_apply_room_visibility()
+
+
+func _recalculate_room_visibility() -> void:
+	room_visibility_by_room = {}
+	var cameras_powered: bool = _cameras_system_is_powered()
+
+	for room_id: int in range(rooms.size()):
+		room_visibility_by_room[room_id] = cameras_powered or _room_has_friendly_pawn_in_room(room_id)
+
+
+func _apply_room_visibility() -> void:
+	_apply_room_visibility_fog()
+	_apply_pawn_visibility()
+	_apply_fire_visibility()
+
+
+func _clear_room_visibility_fog() -> void:
+	for tween_variant: Variant in room_visibility_fog_tweens_by_room.values():
+		var tween: Tween = tween_variant
+		tween.kill()
+
+	for child: Node in room_visibility_fog_layer.get_children():
+		child.queue_free()
+
+	room_visibility_fog_polygons_by_room = {}
+	room_visibility_fog_by_room = {}
+	room_visibility_fog_tweens_by_room = {}
+
+
+func _setup_room_visibility_fog() -> void:
+	_clear_room_visibility_fog()
+
+	for room_id: int in range(rooms.size()):
+		var visuals: Array[Polygon2D] = []
+
+		for polygon_variant: Variant in rooms[room_id]["polygons"]:
+			var polygon: PackedVector2Array = polygon_variant
+			var visual: Polygon2D = Polygon2D.new()
+			visual.name = "RoomVisibilityFog_" + str(room_id)
+			visual.polygon = polygon
+			visual.color = room_visibility_fog_color
+			visual.visible = false
+			room_visibility_fog_layer.add_child(visual)
+			visuals.append(visual)
+
+		room_visibility_fog_polygons_by_room[room_id] = visuals
+
+
+func _apply_room_visibility_fog() -> void:
+	if not is_instance_valid(room_visibility_fog_layer):
+		return
+
+	room_visibility_fog_layer.visible = true
+
+	for room_id: int in range(rooms.size()):
+		var hidden: bool = room_visibility_fog_enabled and not _room_is_visible_to_player(room_id)
+		_apply_single_room_visibility_fog(room_id, hidden, true)
+
+
+func _apply_single_room_visibility_fog(room_id: int, hidden: bool, animated: bool) -> void:
+	if not room_visibility_fog_polygons_by_room.has(room_id):
+		return
+
+	var had_state: bool = room_visibility_fog_by_room.has(room_id)
+
+	if had_state and bool(room_visibility_fog_by_room[room_id]) == hidden:
+		for visual_variant: Variant in room_visibility_fog_polygons_by_room[room_id]:
+			var visual: Polygon2D = visual_variant
+			if is_instance_valid(visual):
+				visual.color = room_visibility_fog_color
+		return
+
+	room_visibility_fog_by_room[room_id] = hidden
+
+	if room_visibility_fog_tweens_by_room.has(room_id):
+		var old_tween: Tween = room_visibility_fog_tweens_by_room[room_id]
+		old_tween.kill()
+		room_visibility_fog_tweens_by_room.erase(room_id)
+
+	var target_alpha: float = 1.0 if hidden else 0.0
+	var visuals: Array = room_visibility_fog_polygons_by_room[room_id]
+
+	for visual_variant: Variant in visuals:
+		var visual: Polygon2D = visual_variant
+		if is_instance_valid(visual):
+			visual.color = room_visibility_fog_color
+			visual.visible = true
+
+	if not animated or not had_state or room_visibility_fog_fade_time <= 0.0:
+		for visual_variant: Variant in visuals:
+			var visual: Polygon2D = visual_variant
+			if is_instance_valid(visual):
+				var instant_modulate: Color = visual.modulate
+				instant_modulate.a = target_alpha
+				visual.modulate = instant_modulate
+				visual.visible = hidden
+		return
+
+	var tween: Tween = create_tween()
+	tween.set_parallel(true)
+	tween.set_trans(Tween.TRANS_SINE)
+	tween.set_ease(Tween.EASE_IN_OUT)
+	room_visibility_fog_tweens_by_room[room_id] = tween
+
+	for visual_variant: Variant in visuals:
+		var visual: Polygon2D = visual_variant
+		if is_instance_valid(visual):
+			tween.tween_property(visual, "modulate:a", target_alpha, room_visibility_fog_fade_time)
+
+	tween.finished.connect(
+		func() -> void:
+			room_visibility_fog_tweens_by_room.erase(room_id)
+			if not hidden:
+				for visual_variant: Variant in visuals:
+					var visual: Polygon2D = visual_variant
+					if is_instance_valid(visual):
+						visual.visible = false
+	)
+
+
+func set_room_visibility_fog_enabled(value: bool) -> void:
+	room_visibility_fog_enabled = value
+	_apply_room_visibility_fog()
+
+
+func _room_is_visible_to_player(room_id: int) -> bool:
+	if room_id < 0:
+		return false
+
+	if room_visibility_by_room.has(room_id):
+		return bool(room_visibility_by_room[room_id])
+
+	return _cameras_system_is_powered() or _room_has_friendly_pawn_in_room(room_id)
+
+
+func _apply_pawn_visibility() -> void:
+	for pawn_id: String in pawns.keys():
+		_apply_single_pawn_visibility(pawn_id, true)
+
+
+func _apply_single_pawn_visibility(pawn_id: String, animated: bool) -> void:
+	if not pawns.has(pawn_id):
+		return
+
+	var pawn_node: CanvasItem = pawns[pawn_id]["node"]
+	var is_visible: bool = true if _pawn_is_friendly_to_ship(pawn_id) else _pawn_is_visible_to_player(pawn_id)
+	var had_state: bool = pawn_visibility_by_id.has(pawn_id)
+
+	if had_state and bool(pawn_visibility_by_id[pawn_id]) == is_visible:
+		return
+
+	pawn_visibility_by_id[pawn_id] = is_visible
+
+	if pawn_visibility_tweens_by_id.has(pawn_id):
+		var old_tween: Tween = pawn_visibility_tweens_by_id[pawn_id]
+		old_tween.kill()
+		pawn_visibility_tweens_by_id.erase(pawn_id)
+
+	var target_alpha: float = 1.0 if is_visible else 0.0
+
+	if not animated or not had_state or pawn_visibility_fade_time <= 0.0:
+		var instant_modulate: Color = pawn_node.modulate
+		instant_modulate.a = target_alpha
+		pawn_node.modulate = instant_modulate
+		return
+
+	var tween: Tween = create_tween()
+	tween.set_trans(Tween.TRANS_SINE)
+	tween.set_ease(Tween.EASE_IN_OUT)
+	pawn_visibility_tweens_by_id[pawn_id] = tween
+	tween.tween_property(pawn_node, "modulate:a", target_alpha, pawn_visibility_fade_time)
+	tween.finished.connect(
+		func() -> void:
+			pawn_visibility_tweens_by_id.erase(pawn_id)
+	)
+
+
+func _apply_fire_visibility() -> void:
+	for fire_cell: Vector2i in fires.keys():
+		_apply_single_fire_visibility(fire_cell, true)
+
+
+func _apply_single_fire_visibility(fire_cell: Vector2i, animated: bool) -> void:
+	if not fires.has(fire_cell):
+		return
+
+	var fire_node: CanvasItem = fires[fire_cell]["node"]
+	var is_visible: bool = _fire_is_visible_to_player(fire_cell)
+	var had_state: bool = fire_visibility_by_cell.has(fire_cell)
+
+	if had_state and bool(fire_visibility_by_cell[fire_cell]) == is_visible:
+		return
+
+	fire_visibility_by_cell[fire_cell] = is_visible
+
+	if fire_visibility_tweens_by_cell.has(fire_cell):
+		var old_tween: Tween = fire_visibility_tweens_by_cell[fire_cell]
+		old_tween.kill()
+		fire_visibility_tweens_by_cell.erase(fire_cell)
+
+	var target_alpha: float = 1.0 if is_visible else 0.0
+
+	if not animated or not had_state or pawn_visibility_fade_time <= 0.0:
+		var instant_modulate: Color = fire_node.modulate
+		instant_modulate.a = target_alpha
+		fire_node.modulate = instant_modulate
+		return
+
+	var tween: Tween = create_tween()
+	tween.set_trans(Tween.TRANS_SINE)
+	tween.set_ease(Tween.EASE_IN_OUT)
+	fire_visibility_tweens_by_cell[fire_cell] = tween
+	tween.tween_property(fire_node, "modulate:a", target_alpha, pawn_visibility_fade_time)
+	tween.finished.connect(
+		func() -> void:
+			fire_visibility_tweens_by_cell.erase(fire_cell)
+	)
+
+
+func _clear_pawn_visibility_runtime() -> void:
+	for tween_variant: Variant in pawn_visibility_tweens_by_id.values():
+		var tween: Tween = tween_variant
+		tween.kill()
+
+	pawn_visibility_tweens_by_id = {}
+	pawn_visibility_by_id = {}
+
+
+func _clear_fire_visibility_runtime() -> void:
+	for tween_variant: Variant in fire_visibility_tweens_by_cell.values():
+		var tween: Tween = tween_variant
+		tween.kill()
+
+	fire_visibility_tweens_by_cell = {}
+	fire_visibility_by_cell = {}
+
+
+func _room_has_friendly_pawn_in_room(room_id: int) -> bool:
+	for pawn_id: String in pawns.keys():
+		if not _pawn_is_friendly_to_ship(pawn_id):
+			continue
+
+		if cell_to_room(_pawn_position_to_foundation_cell(pawn_id)) == room_id:
+			return true
+
+	return false
+
+
+func _door_is_visible_to_player(door_cells: Array) -> bool:
+	if _cameras_system_is_powered():
+		return true
+
+	for door_cell: Vector2i in door_cells:
+		var offsets: Array[Vector2i] = [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
+
+		for offset: Vector2i in offsets:
+			var room_id: int = cell_to_room(door_cell + offset)
+
+			if room_id >= 0 and _room_is_visible_to_player(room_id):
+				return true
+
+	return false
+
+
+func get_room_hint_data(room_id: int) -> Dictionary:
+	if room_id < 0:
+		return {
+			"type": "room",
+			"room_id": room_id,
+			"visible": false,
+			"hidden": true,
+			"area": 0,
+			"kind": null,
+			"kinds": [],
+			"oxygen": 0.0,
+			"fires": [],
+			"hull_holes": [],
+			"pawns": [],
+			"hp": 0.0,
+			"integrity": 0,
+			"integrity_max": 0,
+			"fortitude": 0.0,
+			"power": 0,
+			"requested_power": 0,
+			"max_power": 0
+		}
+
+	var room: Dictionary = rooms[room_id]
+	var visible: bool = _room_is_visible_to_player(room_id)
+
+	var result: Dictionary = {
+		"type": "room",
+		"room_id": room_id,
+		"visible": visible,
+		"hidden": not visible,
+		"area": int(room["sample_cells_count"]),
+		"kind": room.get("kind", null),
+		"kinds": room.get("kinds", []),
+		"hp": float(room_hp_by_room.get(room_id, room_hp_max)),
+		"integrity": int(room_integrity_by_room.get(room_id, room_integrity_max_default)),
+		"integrity_max": int(room_integrity_max_by_room.get(room_id, room_integrity_max_default)),
+		"fortitude": float(room_fortitude_by_room.get(room_id, room_fortitude_max)),
+		"power": int(room_current_power_by_room.get(room_id, 0)),
+		"requested_power": int(room_requested_power_by_room.get(room_id, 0)),
+		"max_power": int(room_max_power_by_room.get(room_id, 0))
+	}
+
+	if not visible:
+		result["oxygen"] = 0.0
+		result["fires"] = []
+		result["hull_holes"] = []
+		result["pawns"] = []
+		return result
+
+	result["oxygen"] = float(oxygen_by_room.get(room_id, 0.0))
+	result["fires"] = _get_visible_fire_cells_in_room(room_id)
+	result["hull_holes"] = _get_visible_hull_hole_cells_in_room(room_id)
+	result["pawns"] = _get_visible_pawn_ids_in_room(room_id)
+
+	return result
+
+
+func get_door_hint_data(door_cells: Array) -> Dictionary:
+	var door_key: String = _door_cells_key(door_cells)
+
+	return {
+		"type": "door",
+		"visible": true,
+		"hidden": false,
+		"disconnected": _doors_system_is_disconnected(),
+		"level": _get_effective_doors_level(),
+		"state": DoorManager.get_door_state(foundation_layer, door_cells),
+		"hp": _get_door_hp(door_key),
+		"max_hp": _get_current_door_max_hp(),
+		"close_cooldown": float(door_close_cooldowns.get(door_key, 0.0))
+	}
+
+
+func get_pawn_hint_data(pawn_id: String) -> Variant:
+	if not _pawn_is_visible_to_player(pawn_id):
+		return null
+
+	var pawn: Dictionary = pawns[pawn_id]
+	var pawn_node: Node2D = pawn["node"]
+
+	return {
+		"type": "pawn",
+		"uuid": pawn_id,
+		"pawn_name": pawn["pawn_name"],
+		"race": pawn["race"],
+		"starship": pawn_node.get_current_starship(),
+		"health": int(pawn_node.health),
+		"max_health": int(pawn_node.max_health),
+		"state": pawn["state"],
+		"task": pawn["task"],
+		"room_id": cell_to_room(_pawn_position_to_foundation_cell(pawn_id))
+	}
+
+
+func get_hint_target_at_cell(cell: Vector2i, hovered_pawn_id: String = "") -> Dictionary:
+	var room_id: int = cell_to_room(cell)
+
+	if room_id < 0:
+		return {
+			"type": "none",
+			"room_id": room_id,
+			"data": get_room_hint_data(room_id)
+		}
+
+	if hovered_pawn_id != "" and _pawn_is_visible_to_player(hovered_pawn_id):
+		return {
+			"type": "pawn",
+			"pawn_id": hovered_pawn_id,
+			"data": get_pawn_hint_data(hovered_pawn_id)
+		}
+
+	return {
+		"type": "room",
+		"room_id": room_id,
+		"data": get_room_hint_data(room_id)
+	}
+
+
+func get_visible_pawn_id_at_cell(cell: Vector2i) -> String:
+	for pawn_id: String in pawns.keys():
+		if _pawn_position_to_foundation_cell(pawn_id) == cell and _pawn_is_friendly_to_ship(pawn_id):
+			return pawn_id
+
+	if not _cell_is_visible_to_player_for_pawn(cell):
+		return ""
+
+	for pawn_id: String in pawns.keys():
+		if _pawn_position_to_foundation_cell(pawn_id) == cell:
+			return pawn_id
+
+	return ""
+
+
+func _pawn_is_visible_to_player(pawn_id: String) -> bool:
+	if _pawn_is_friendly_to_ship(pawn_id):
+		return true
+
+	return _cell_is_visible_to_player_for_pawn(_pawn_position_to_foundation_cell(pawn_id))
+
+
+func _fire_is_visible_to_player(fire_cell: Vector2i) -> bool:
+	if not fires.has(fire_cell):
+		return false
+
+	var fire: Node2D = fires[fire_cell]["node"]
+	var room_id: int = int(fire.get_meta("room"))
+	return _room_is_visible_to_player(room_id)
+
+
+func _cell_is_visible_to_player_for_pawn(cell: Vector2i) -> bool:
+	var room_id: int = cell_to_room(cell)
+
+	if room_id >= 0:
+		return _room_is_visible_to_player(room_id)
+
+	var tile_data: TileData = foundation_layer.get_cell_tile_data(cell)
+
+	if tile_data == null:
+		return false
+
+	if str(tile_data.get_custom_data("path")) != "door":
+		return false
+
+	return _door_cell_is_visible_to_player(cell)
+
+
+func _door_cell_is_visible_to_player(door_cell: Vector2i) -> bool:
+	if _cameras_system_is_powered():
+		return true
+
+	var offsets: Array[Vector2i] = [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
+
+	for offset: Vector2i in offsets:
+		var room_id: int = cell_to_room(door_cell + offset)
+
+		if room_id >= 0 and _room_is_visible_to_player(room_id):
+			return true
+
+	return false
+
+
+func _get_visible_fire_cells_in_room(room_id: int) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+
+	for fire_cell: Vector2i in fires.keys():
+		var fire: Node2D = fires[fire_cell]["node"]
+
+		if int(fire.get_meta("room")) == room_id:
+			result.append(fire_cell)
+
+	return result
+
+
+func _get_visible_hull_hole_cells_in_room(room_id: int) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var room: Dictionary = rooms[room_id]
+
+	for hole_cell: Vector2i in hull_holes.keys():
+		if hole_cell in room["floor_cells"]:
+			result.append(hole_cell)
+
+	return result
+
+
+func _get_visible_pawn_ids_in_room(room_id: int) -> Array[String]:
+	var result: Array[String] = []
+
+	for pawn_id: String in pawns.keys():
+		if cell_to_room(_pawn_position_to_foundation_cell(pawn_id)) == room_id:
+			result.append(pawn_id)
+
+	return result
+
+
 func _assign_idle_pawn_tasks() -> void:
 	var orders: Array[Dictionary] = PawnTaskLogic.create_task_orders(
 		foundation_layer,
@@ -1832,6 +2603,7 @@ func fire_to_room(room_id: int) -> bool:
 	fire.connect("fire_out", fire_out)
 	fires[available_cells[0]] = {"node": fire}
 	fire_layer.add_child(fire)
+	_apply_single_fire_visibility(available_cells[0], false)
 	
 	return true
 
@@ -1841,9 +2613,7 @@ func fire_spreading(fire: Node2D) -> void:
 	if fire_to_room(room_index):
 		return
 	
-	var chance: float = fortress_doors_levels_map[
-		clampi(doors_level, 0, fortress_doors_levels_map.size() - 1)
-	]
+	var chance: float = _get_current_door_fire_spread_chance()
 	if randf() > chance:
 		return
 	
@@ -1859,7 +2629,13 @@ func fire_spreading(fire: Node2D) -> void:
 			return
 
 func fire_out(fire: Node2D) -> void:
-	fires.erase(fire.get_meta("cell"))
+	var fire_cell: Vector2i = fire.get_meta("cell")
+	fires.erase(fire_cell)
+	fire_visibility_by_cell.erase(fire_cell)
+	if fire_visibility_tweens_by_cell.has(fire_cell):
+		var visibility_tween: Tween = fire_visibility_tweens_by_cell[fire_cell]
+		visibility_tween.kill()
+		fire_visibility_tweens_by_cell.erase(fire_cell)
 
 func pawn_to_cell(
 	pawn_id: String,
@@ -1913,7 +2689,7 @@ func pawn_to_cell(
 
 	pawns[pawn_id]["task"] = movement_task
 
-	if not _pawn_is_friendly_to_ship(pawn_id):
+	if not _pawn_is_friendly_to_ship(pawn_id) or _doors_system_is_disconnected():
 		var first_closed_door_step_index: int = _get_first_closed_door_step_index(path_data["steps"])
 
 		if first_closed_door_step_index >= 0:
@@ -2413,6 +3189,12 @@ func _on_pawn_dead(pawn_id: String) -> void:
 	pawn_battle_attack_timers.erase(pawn_id)
 	door_destroy_attack_timers.erase(pawn_id)
 	room_sabotage_pawn_room_by_id.erase(pawn_id)
+	pawn_healing_progress_by_id.erase(pawn_id)
+	pawn_visibility_by_id.erase(pawn_id)
+	if pawn_visibility_tweens_by_id.has(pawn_id):
+		var visibility_tween: Tween = pawn_visibility_tweens_by_id[pawn_id]
+		visibility_tween.kill()
+		pawn_visibility_tweens_by_id.erase(pawn_id)
 
 	emit_signal("delete_pawn_event", pawn_node, pawn_id)
 
@@ -2719,6 +3501,8 @@ func setup_room_hp() -> void:
 	room_requested_power_by_room = {}
 	room_current_power_by_room = {}
 	room_sabotage_pawn_room_by_id = {}
+	room_visibility_by_room = {}
+	specialized_room_state_cache = {}
 	_setup_room_station_hp_visuals()
 
 	for room_id: int in range(rooms.size()):
@@ -2765,6 +3549,67 @@ func _get_room_station_max_power(room_id: int) -> int:
 	return result
 
 
+func get_specialized_rooms_state() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+
+	for room_id: int in range(rooms.size()):
+		if not _room_is_specialized(room_id):
+			continue
+
+		result.append({
+			"specialization": str(rooms[room_id]["kind"]),
+			"opened_max_level": int(room_unlocked_max_power_by_room.get(room_id, 0)),
+			"health": float(room_hp_by_room.get(room_id, room_hp_max)),
+			"energy": int(room_current_power_by_room.get(room_id, 0))
+		})
+
+	return result
+
+
+func _room_is_specialized(room_id: int) -> bool:
+	return room_id >= 0 and room_id < rooms.size() and rooms[room_id].has("kind") and str(rooms[room_id]["kind"]) != ""
+
+
+func _get_room_id_by_specialization(specialization: String) -> int:
+	for room_id: int in range(rooms.size()):
+		if not _room_is_specialized(room_id):
+			continue
+
+		if str(rooms[room_id]["kind"]) == specialization:
+			return room_id
+
+	return -1
+
+
+func _get_specialized_room_signal_state(room_id: int) -> Dictionary:
+	return {
+		"health": float(room_hp_by_room.get(room_id, room_hp_max)),
+		"energy": int(room_current_power_by_room.get(room_id, 0)),
+		"opened_max_level": int(room_unlocked_max_power_by_room.get(room_id, 0))
+	}
+
+
+func _emit_specialized_room_state_updates() -> void:
+	for room_id: int in range(rooms.size()):
+		if not _room_is_specialized(room_id):
+			continue
+
+		var specialization: String = str(rooms[room_id]["kind"])
+		var state: Dictionary = _get_specialized_room_signal_state(room_id)
+
+		if specialized_room_state_cache.has(specialization) and specialized_room_state_cache[specialization] == state:
+			continue
+
+		specialized_room_state_cache[specialization] = state.duplicate()
+		emit_signal(
+			"specialized_room_state_changed",
+			specialization,
+			float(state["health"]),
+			int(state["energy"]),
+			int(state["opened_max_level"])
+		)
+
+
 func set_ship_power_available(value: int) -> void:
 	ship_power_available = maxi(value, 0)
 	_recalculate_room_power()
@@ -2784,6 +3629,36 @@ func set_room_requested_power(room_id: int, value: int) -> void:
 	var max_power: int = _get_room_requested_power_limit(room_id)
 	room_requested_power_by_room[room_id] = clampi(value, 0, max_power)
 	_recalculate_room_power()
+
+
+func set_specialized_room_energy(specialization: String, new_energy: int) -> bool:
+	var room_id: int = _get_room_id_by_specialization(specialization)
+
+	if room_id < 0:
+		return false
+
+	if new_energy < 0:
+		return false
+
+	if new_energy > _get_room_effective_power_limit(room_id):
+		return false
+
+	var requested_total: int = new_energy
+	for other_room_id: int in range(rooms.size()):
+		if other_room_id == room_id:
+			continue
+
+		requested_total += mini(
+			int(room_requested_power_by_room.get(other_room_id, 0)),
+			_get_room_effective_power_limit(other_room_id)
+		)
+
+	if requested_total > ship_power_available:
+		return false
+
+	room_requested_power_by_room[room_id] = new_energy
+	_recalculate_room_power()
+	return int(room_current_power_by_room.get(room_id, 0)) == new_energy
 
 
 func _get_room_integrity_power_limit(room_id: int) -> int:
@@ -2835,6 +3710,9 @@ func _recalculate_room_power() -> void:
 		ship_power_used += granted_power
 
 	ship_power_unused = remaining_power
+	_apply_door_recolor_shader()
+	_recalculate_room_visibility()
+	_emit_specialized_room_state_updates()
 
 
 func _setup_room_station_hp_visuals() -> void:
@@ -3161,7 +4039,7 @@ func process_room_hp(delta: float) -> void:
 	process_room_systems(delta)
 
 func _pawn_is_friendly_to_ship(pawn_id: String) -> bool:
-	return pawns[pawn_id]["node"].control_is_available(starship_uuid)
+	return str(pawns[pawn_id]["node"].get_current_starship()) == starship_uuid
 
 func _on_room_hp_depleted(room_id: int) -> void:
 	room_fortitude_by_room[room_id] = room_fortitude_max

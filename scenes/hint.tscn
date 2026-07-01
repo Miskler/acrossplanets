@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://npasmv6cckt5" path="res://scripts/hint.gd" id="1_nws1o"]
 [ext_resource type="Texture2D" uid="uid://dhm23ifg2w00k" path="res://assets/icons/hint/crack.png" id="2_eevai"]
 [ext_resource type="Texture2D" uid="uid://bd3scdxowqlis" path="res://assets/icons/hint/oxygen.png" id="2_w3r4f"]
+[ext_resource type="Texture2D" uid="uid://ckvch2u5nwxqp" path="res://assets/icons/hint/energy.png" id="3_1v1av"]
 [ext_resource type="Texture2D" uid="uid://domrhmrxqgq27" path="res://assets/icons/hint/fire.png" id="3_l02gy"]
 [ext_resource type="Texture2D" uid="uid://j6nbrf8kpyxu" path="res://assets/icons/hint/door.png" id="5_acx8x"]
 [ext_resource type="Texture2D" uid="uid://fwrcidcgt7jm" path="res://assets/icons/hint/human.png" id="6_nws1o"]
@@ -11,26 +12,28 @@
 [ext_resource type="Texture2D" uid="uid://clskg70w0x73r" path="res://assets/icons/hint/level.png" id="8_l02gy"]
 [ext_resource type="Texture2D" uid="uid://cyf8ux08cchhb" path="res://assets/icons/hint/aid.png" id="10_1v1av"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fket2"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_1v1av"]
 bg_color = Color(1, 1, 1, 1)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hcxlo"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fket2"]
 bg_color = Color(0, 1, 0, 1)
 
 [sub_resource type="Theme" id="Theme_ry3e3"]
-ProgressBar/styles/background = SubResource("StyleBoxFlat_fket2")
-ProgressBar/styles/fill = SubResource("StyleBoxFlat_hcxlo")
+ProgressBar/styles/background = SubResource("StyleBoxFlat_1v1av")
+ProgressBar/styles/fill = SubResource("StyleBoxFlat_fket2")
 
-[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_eevai"]
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_hcxlo"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_l02gy"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ry3e3"]
 bg_color = Color(1, 0, 0, 1)
 
 [sub_resource type="Theme" id="Theme_acx8x"]
-ProgressBar/styles/background = SubResource("StyleBoxEmpty_eevai")
-ProgressBar/styles/fill = SubResource("StyleBoxFlat_l02gy")
+ProgressBar/styles/background = SubResource("StyleBoxEmpty_hcxlo")
+ProgressBar/styles/fill = SubResource("StyleBoxFlat_ry3e3")
 
 [node name="Hint" type="Control" unique_id=983738499]
+z_index = 10
+z_as_relative = false
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -161,11 +164,40 @@ show_percentage = false
 custom_minimum_size = Vector2(0, 4)
 layout_mode = 2
 
-[node name="Cracks" type="Control" parent="Room/RightBox" unique_id=1183096217]
+[node name="Energy" type="Control" parent="Room/RightBox" unique_id=1183096217]
 custom_minimum_size = Vector2(0, 25)
 layout_mode = 2
 
-[node name="Logo" type="TextureRect" parent="Room/RightBox/Cracks" unique_id=1769639400]
+[node name="Logo" type="TextureRect" parent="Room/RightBox/Energy" unique_id=1769639400]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 32.0
+grow_vertical = 2
+texture = ExtResource("3_1v1av")
+expand_mode = 2
+stretch_mode = 5
+
+[node name="Label" type="Label" parent="Room/RightBox/Energy" unique_id=241035323]
+layout_mode = 1
+anchors_preset = -1
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 27.0
+grow_horizontal = 0
+grow_vertical = 2
+text = "2|1"
+vertical_alignment = 1
+
+[node name="ColorRect3" type="ColorRect" parent="Room/RightBox" unique_id=953218373]
+custom_minimum_size = Vector2(0, 4)
+layout_mode = 2
+
+[node name="Cracks" type="Control" parent="Room/RightBox" unique_id=1333667512]
+custom_minimum_size = Vector2(0, 25)
+layout_mode = 2
+
+[node name="Logo" type="TextureRect" parent="Room/RightBox/Cracks" unique_id=1136653225]
 layout_mode = 1
 anchors_preset = 9
 anchor_bottom = 1.0
@@ -175,7 +207,7 @@ texture = ExtResource("2_eevai")
 expand_mode = 2
 stretch_mode = 5
 
-[node name="Label" type="Label" parent="Room/RightBox/Cracks" unique_id=241035323]
+[node name="Label" type="Label" parent="Room/RightBox/Cracks" unique_id=578891820]
 layout_mode = 1
 anchors_preset = -1
 anchor_right = 1.0
@@ -575,6 +607,7 @@ anchors_preset = 10
 anchor_right = 1.0
 offset_top = 27.0
 offset_bottom = 30.0
+grow_horizontal = 2
 
 [node name="ColorRect2" type="ColorRect" parent="Door/Lines" unique_id=1190214602]
 layout_mode = 1
@@ -698,6 +731,7 @@ anchors_preset = 10
 anchor_right = 1.0
 offset_top = 27.0
 offset_bottom = 30.0
+grow_horizontal = 2
 
 [node name="GridContainer" type="GridContainer" parent="Pawn" unique_id=255814385]
 layout_mode = 1
@@ -857,6 +891,7 @@ vertical_alignment = 1
 
 [node name="Header" type="Control" parent="Pawn" unique_id=1702638988]
 layout_mode = 1
+anchors_preset = 0
 offset_left = 3.0
 offset_top = 33.0
 offset_right = 129.0

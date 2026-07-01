@@ -271,17 +271,19 @@ func _draw() -> void:
 
 func _click_select() -> void:
 	under_mouse.position = get_global_mouse_position()
+	var mouse_position: Vector2 = get_global_mouse_position()
 	var hits: Array[Dictionary] = get_world_2d().direct_space_state.intersect_point(under_mouse)
+	var pawn: Area2D = _get_closest_visible_pawn_from_hits(hits, mouse_position)
+	
+	if pawn != null:
+		pawn_selected(pawn, pawn.get_meta("uuid"))
+		return
 	
 	for hit: Dictionary in hits:
 		var collider: Object = hit.get("collider", null)
 		
 		if collider == null:
 			continue
-		
-		if collider.is_in_group("pawn"):
-			pawn_selected(collider, collider.get_meta("uuid"))
-			return
 		
 		if collider.is_in_group("door"):
 			door_selected(collider, collider.get_meta("door_cells"))
@@ -314,7 +316,14 @@ func _click_goto() -> void:
 
 func _get_pawn_under_mouse() -> Area2D:
 	under_mouse.position = get_global_mouse_position()
+	var mouse_position: Vector2 = get_global_mouse_position()
 	var hits: Array[Dictionary] = get_world_2d().direct_space_state.intersect_point(under_mouse)
+	return _get_closest_visible_pawn_from_hits(hits, mouse_position)
+
+
+func _get_closest_visible_pawn_from_hits(hits: Array[Dictionary], global_position: Vector2) -> Area2D:
+	var closest_pawn: Area2D = null
+	var closest_distance_sq: float = INF
 	
 	for hit: Dictionary in hits:
 		var collider: Object = hit.get("collider", null)
@@ -322,10 +331,25 @@ func _get_pawn_under_mouse() -> Area2D:
 		if collider == null:
 			continue
 		
-		if collider.is_in_group("pawn"):
-			return collider
+		if not collider.is_in_group("pawn"):
+			continue
+		
+		var pawn_id: String = str(collider.get_meta("uuid"))
+		
+		if not get_parent().pawns.has(pawn_id):
+			continue
+		
+		if not get_parent()._pawn_is_visible_to_player(pawn_id):
+			continue
+		
+		var pawn_area: Area2D = collider as Area2D
+		var distance_sq: float = pawn_area.global_position.distance_squared_to(global_position)
+		
+		if closest_pawn == null or distance_sq < closest_distance_sq:
+			closest_pawn = pawn_area
+			closest_distance_sq = distance_sq
 	
-	return null
+	return closest_pawn
 
 func _get_drag_global_rect() -> Rect2:
 	var min_pos: Vector2 = Vector2(
@@ -778,19 +802,14 @@ func get_info_at_global_position(global_position: Vector2) -> Dictionary:
 				"info": get_door_info(collider.get_meta("door_cells"))
 			}
 	
-	for hit: Dictionary in hits:
-		var collider: Object = hit.get("collider", null)
-		
-		if collider == null:
-			continue
-		
-		if collider.is_in_group("pawn"):
-			var pawn_id = str(collider.get_meta("uuid"))
-			if get_parent().pawns.has(pawn_id):
-				return {
-					"type": "pawn",
-					"info": get_pawn_info(pawn_id)
-				}
+	var pawn: Area2D = _get_closest_visible_pawn_from_hits(hits, global_position)
+	
+	if pawn != null:
+		var pawn_id: String = str(pawn.get_meta("uuid"))
+		return {
+			"type": "pawn",
+			"info": get_pawn_info(pawn_id)
+		}
 	
 	for hit: Dictionary in hits:
 		var collider: Object = hit.get("collider", null)
@@ -868,6 +887,7 @@ func get_door_info(door_cells: Array) -> Dictionary:
 	) == DoorManager.DOOR_STATE_OPEN
 	
 	return {
+		"hidden": false,
 		"level": int(starship.doors_level),
 		"fortress": _get_door_fortress_percent(door_key),
 		"open": is_open,
@@ -878,10 +898,15 @@ func get_door_info(door_cells: Array) -> Dictionary:
 
 func get_room_info(room_id: int) -> Dictionary:
 	var starship: Node = get_parent()
-	var oxygen_balance: Dictionary = _get_room_oxygen_balance(room_id)
 	var room: Dictionary = starship.rooms[room_id]
-	
+
+	if not starship._room_is_visible_to_player(room_id):
+		return _get_hidden_room_info(room_id, str(room["kind"]), _get_room_air_capacity(room_id))
+
+	var oxygen_balance: Dictionary = _get_room_oxygen_balance(room_id)
+
 	return {
+		"hidden": false,
 		"specialization": str(room["kind"]),
 		"oxygen": float(starship.oxygen_by_room.get(room_id, 0.0)),
 		"air_capacity": _get_room_air_capacity(room_id),
@@ -894,6 +919,42 @@ func get_room_info(room_id: int) -> Dictionary:
 			"energy": int(starship.room_current_power_by_room.get(room_id, 0))
 		},
 		"oxygen_balance": oxygen_balance
+	}
+
+
+func _get_hidden_room_info(room_id: int, specialization: String, air_capacity: float) -> Dictionary:
+	var starship: Node = get_parent()
+	
+	return {
+		"hidden": true,
+		"specialization": specialization,
+		"oxygen": 0.0,
+		"air_capacity": air_capacity,
+		"holes": 0,
+		"fires": 0,
+		"health": {
+			"current": int(starship.room_integrity_by_room.get(room_id, 0)),
+			"maximum": int(starship.room_integrity_max_by_room.get(room_id, starship.room_integrity_max_default)),
+			"fortress": _get_room_fortress_percent(room_id),
+			"energy": int(starship.room_current_power_by_room.get(room_id, 0))
+		},
+		"oxygen_balance": _get_empty_room_oxygen_balance()
+	}
+
+
+func _get_empty_room_oxygen_balance() -> Dictionary:
+	return {
+		"income": {
+			"starship": 0.0,
+			"doors": 0.0,
+			"pawns": 0.0
+		},
+		"loss": {
+			"fires": 0.0,
+			"holes": 0.0,
+			"doors": 0.0,
+			"pawns": 0.0
+		}
 	}
 
 
@@ -989,8 +1050,7 @@ func _get_pawn_battle_health_loss(pawn_id: String) -> float:
 
 func _get_pawn_room_id(pawn_id: String) -> int:
 	var starship: Node = get_parent()
-	var cell: Vector2i = starship.pawns[pawn_id]["cells"][0]
-	return starship.cell_to_room(cell)
+	return starship.cell_to_room(starship._pawn_position_to_foundation_cell(pawn_id))
 
 
 func _get_room_oxygen_balance(room_id: int) -> Dictionary:

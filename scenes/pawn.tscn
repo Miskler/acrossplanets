@@ -7,7 +7,7 @@
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_0gq48"]
 shader = ExtResource("2_w61pg")
 shader_parameter/from_color = Color(0.28235295, 0.3882353, 0.48235294, 1)
-shader_parameter/to_color = Color(1, 0, 0, 1)
+shader_parameter/to_color = Color(0.9679299, 3.85046e-07, 0.48776942, 1)
 shader_parameter/tolerance = 0.55
 shader_parameter/keep_brightness = true
 

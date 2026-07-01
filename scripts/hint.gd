@@ -27,6 +27,7 @@ const TASKS: Dictionary = {
 	"station": "работает",
 	"fire": "тушит",
 	"hull_repair": "латает пробоину",
+	"room_repair": "восстанавливает станцию",
 	"room_destroy": "саботирует",
 	"idle": "стоит",
 	"door_destroy": "выбивает дверь"
@@ -63,11 +64,20 @@ func render(data: Dictionary) -> void:
 		null:
 			pass
 		"room":
-			$Title.text = SPECIALIZATIONS.get(data["info"]["specialization"], "Комната")
-			$Room/Grid/Header/Label.text = str(int(data["info"]["oxygen"]))+"% * "+str(int(data["info"]["air_capacity"]/100))+"m²"
-			$Room/RightBox/Cracks/Label.text = str(data["info"]["holes"])
-			$Room/RightBox/Fire/Label.text = str(data["info"]["fires"])
+			print(data["info"])
 			
+			$Title.text = SPECIALIZATIONS.get(data["info"]["specialization"], "Комната")
+			
+			if data["info"]["hidden"]:
+				$Room/Grid/Header/Label.text = "??% * "+str(int(data["info"]["air_capacity"]/100))+"m²"
+				$Room/RightBox/Cracks/Label.text = "??"
+				$Room/RightBox/Fire/Label.text = "??"
+			else:
+				$Room/Grid/Header/Label.text = str(int(data["info"]["oxygen"]))+"% * "+str(int(data["info"]["air_capacity"]/100))+"m²"
+				$Room/RightBox/Cracks/Label.text = str(data["info"]["holes"])
+				$Room/RightBox/Fire/Label.text = str(data["info"]["fires"])
+			
+			$Room/RightBox/Energy/Label.text = str(data["info"]["health"]["energy"])+"|"+str(data["info"]["health"]["current"])
 			$Room/RightBox/Heart/Label.text = str(data["info"]["health"]["current"])+"|"+str(data["info"]["health"]["maximum"])
 			
 			var healing = $Room/RightBox/Heart/Healing
@@ -81,10 +91,13 @@ func render(data: Dictionary) -> void:
 			
 			var total_plus = render_in_grid(data["info"]["oxygen_balance"], "income", "income", "Room/Grid/GridContainer/", "+", "%")
 			var total_minus = render_in_grid(data["info"]["oxygen_balance"], "loss", "loss", "Room/Grid/GridContainer/", "-", "%")
-			var total = -total_minus[0]+total_plus[0]
-			$Room/Grid/Total.text = "-"+str(total_minus[0])+"%+"+str(total_plus[0])+"%="+("+" if total > 0 else "")+str(total)+"%/сек"
+			if data["info"]["hidden"]:
+				$Room/Grid/Total.text = "-?% +?% = ?%/сек"
+			else:
+				var total = -total_minus[0]+total_plus[0]
+				$Room/Grid/Total.text = "-"+str(total_minus[0])+"%+"+str(total_plus[0])+"%="+("+" if total > 0 else "")+str(total)+"%/сек"
 			
-			size = Vector2(210, 112)
+			size = Vector2(210, 174)
 			size.y = max(calc_grid_offset(total_plus[1] + total_minus[1])+size.y, 137)
 		"door":
 			var to_title = ""
