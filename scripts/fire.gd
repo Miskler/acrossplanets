@@ -8,7 +8,11 @@ var wait_time: float = 0.5
 
 var time_scale: int = 1
 var health_level: int = 2
-var health_percent: float = 0.5
+
+var health_percent: float = 0
+var maximum_percent: float = 1.5
+var minimum_percent: float = -0.5
+
 var extinguishing_fire: bool = false
 var oxygen_consumption: float = 2.0
 
@@ -30,7 +34,7 @@ func set_health(new_health: int):
 			return
 		else: inited = true
 	health_level = new_health
-	health_percent = 0.5
+	health_percent = 0
 	if health_level < 1:
 		queue_free()
 	elif health_level > 3:
@@ -58,15 +62,15 @@ func oxygen_starvation():
 func _on_timer_timeout() -> void:
 	if not extinguishing_fire:
 		health_percent += 0.1
-		if health_percent >= 2:
+		if health_percent >= maximum_percent:
 			if health_level < 3:
 				set_health(health_level+1)
 			else:
-				health_percent = 0.5
+				health_percent = 0
 				emit_signal("fire_spreading", self)
 	else:
 		health_percent -= 0.1
-		if health_percent <= 0:
+		if health_percent <= minimum_percent:
 			if health_level > 1:
 				set_health(health_level-1)
 			else:

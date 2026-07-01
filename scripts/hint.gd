@@ -69,11 +69,15 @@ func render(data: Dictionary) -> void:
 			if data["info"]["hidden"]:
 				$Room/Grid/Header/Label.text = "??% * "+str(int(data["info"]["air_capacity"]/100))+"m²"
 				$Room/RightBox/Cracks/Label.text = "??"
+				$Room/RightBox/Cracks/Healing.value = 0
 				$Room/RightBox/Fire/Label.text = "??"
+				$Room/RightBox/Fire/Healing.value = 0
 			else:
 				$Room/Grid/Header/Label.text = str(int(data["info"]["oxygen"]))+"% * "+str(int(data["info"]["air_capacity"]/100))+"m²"
 				$Room/RightBox/Cracks/Label.text = str(data["info"]["holes"])
+				$Room/RightBox/Cracks/Healing.value = data["info"]["hull_repair_progress"]
 				$Room/RightBox/Fire/Label.text = str(data["info"]["fires"])
+				$Room/RightBox/Fire/Healing.value = data["info"]["fire_progress"]
 			
 			$Room/RightBox/Energy/Label.text = str(data["info"]["health"]["energy"])+"|"+str(data["info"]["health"]["current"])
 			$Room/RightBox/Heart/Label.text = str(data["info"]["health"]["current"])+"|"+str(data["info"]["health"]["maximum"])

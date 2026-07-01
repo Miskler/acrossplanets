@@ -912,6 +912,8 @@ func get_room_info(room_id: int) -> Dictionary:
 		"air_capacity": _get_room_air_capacity(room_id),
 		"holes": _get_room_holes_count(room_id),
 		"fires": _get_room_fires_count(room_id),
+		"fire_progress": _get_room_fire_progress_percent(room_id),
+		"hull_repair_progress": _get_room_hull_repair_progress_percent(room_id),
 		"health": {
 			"current": int(starship.room_integrity_by_room.get(room_id, 0)),
 			"maximum": int(starship.room_integrity_max_by_room.get(room_id, starship.room_integrity_max_default)),
@@ -932,6 +934,8 @@ func _get_hidden_room_info(room_id: int, specialization: String, air_capacity: f
 		"air_capacity": air_capacity,
 		"holes": 0,
 		"fires": 0,
+		"fire_progress": 0.0,
+		"hull_repair_progress": 0.0,
 		"health": {
 			"current": int(starship.room_integrity_by_room.get(room_id, 0)),
 			"maximum": int(starship.room_integrity_max_by_room.get(room_id, starship.room_integrity_max_default)),
@@ -956,6 +960,88 @@ func _get_empty_room_oxygen_balance() -> Dictionary:
 			"pawns": 0.0
 		}
 	}
+
+
+func _get_active_room_task_target_cell(room_id: int, task_type: String) -> Variant:
+	var starship: Node = get_parent()
+	
+	for pawn_id: String in starship.pawns.keys():
+		if not starship._pawn_is_friendly_to_ship(pawn_id):
+			continue
+		
+		var pawn: Dictionary = starship.pawns[pawn_id]
+		
+		if pawn["state"] != PawnTaskLogic.STATE_WORKING:
+			continue
+		
+		var task: Dictionary = pawn["task"]
+		
+		if task.get("type", "") != task_type:
+			continue
+		
+		var target_cell: Vector2i = task["target_cell"]
+		
+		if starship.cell_to_room(target_cell) == room_id:
+			return target_cell
+		
+		if task_type == PawnTaskLogic.TASK_FIRE and starship.fires.has(target_cell):
+			var fire: Node2D = starship.fires[target_cell]["node"]
+			
+			if int(fire.get_meta("room")) == room_id:
+				return target_cell
+		
+		if task_type == PawnTaskLogic.TASK_HULL_REPAIR and starship.hull_holes.has(target_cell):
+			if target_cell in starship.rooms[room_id]["floor_cells"]:
+				return target_cell
+	
+	return null
+
+
+func _get_room_fire_progress_percent(room_id: int) -> float:
+	var starship: Node = get_parent()
+	var target_cell_variant: Variant = _get_active_room_task_target_cell(room_id, PawnTaskLogic.TASK_FIRE)
+	
+	if target_cell_variant == null:
+		return 0.0
+	
+	var target_cell: Vector2i = target_cell_variant
+	
+	if not starship.fires.has(target_cell):
+		return 0.0
+	
+	return _get_fire_stage_progress_percent(starship.fires[target_cell]["node"])
+
+
+func _get_fire_stage_progress_percent(fire: Node2D) -> float:
+	if not bool(fire.extinguishing_fire):
+		return 0.0
+	
+	var current_percent: float = float(fire.health_percent)
+	var minimum_percent: float = float(fire.minimum_percent)
+	
+	if minimum_percent >= 0.0:
+		return 0.0
+	
+	return clampf(current_percent * -100.0 / absf(minimum_percent), 0.0, 100.0)
+
+
+func _get_room_hull_repair_progress_percent(room_id: int) -> float:
+	var starship: Node = get_parent()
+	var target_cell_variant: Variant = _get_active_room_task_target_cell(room_id, PawnTaskLogic.TASK_HULL_REPAIR)
+	
+	if target_cell_variant == null:
+		return 0.0
+	
+	var target_cell: Vector2i = target_cell_variant
+	
+	if not starship.hull_holes.has(target_cell):
+		return 0.0
+	
+	return clampf(
+		float(starship.hull_repair_progress.get(target_cell, 0.0)) * 100.0 / maxf(float(starship.hull_repair_engineering_per_step), 1.0),
+		0.0,
+		100.0
+	)
 
 
 func _get_info_hits_at_global_position(global_position: Vector2) -> Array[Dictionary]:
